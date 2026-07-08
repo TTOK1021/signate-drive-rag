@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
 
 # 仮想環境
 .venv/
@@ -37,5 +38,24 @@ evaluation/submit/*.csv
 # OS
 .DS_Store
 Thumbs.db
+
+# Test and analysis caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Competition source data
+share/
+data/raw/
+evaluation/data/
+
+# Generated artifacts
+artifacts/*
+!artifacts/.gitkeep
+
+logs/*
+!logs/.gitkeep
 
 
