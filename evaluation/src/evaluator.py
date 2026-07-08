@@ -6,21 +6,20 @@ from openai import OpenAI
 from tqdm import tqdm
 
 
-class Evaluator():
-    def __init__(self, sub: pd.DataFrame, ans: pd.DataFrame)->None:
-        print('\nEvaluation:')
+class Evaluator:
+    def __init__(self, sub: pd.DataFrame, ans: pd.DataFrame) -> None:
+        print("\nEvaluation:")
         self.sub = sub
         self.ans = ans
 
-
-    def evaluate(self)->None:
+    def evaluate(self) -> None:
         raise NotImplementedError
 
 
 class CRAGEvaluator(Evaluator):
-    def evaluate(self, model_name: str, save_sims: bool=True) -> tuple:
-        print('  By CRAG')
-        print('  llm: {}'.format(model_name))
+    def evaluate(self, model_name: str, save_sims: bool = True) -> tuple:
+        print("  By CRAG")
+        print("  llm: {}".format(model_name))
         try:
             encoding = tiktoken.encoding_for_model(model_name)
         except KeyError:
@@ -31,28 +30,28 @@ class CRAGEvaluator(Evaluator):
         ans_sims = {}
         score = 0
         for i, true in tqdm(self.ans.iterrows()):
-            res, num_tokens = self._judge_by_crag(self.sub.loc[i][1], true[1], client, model_name, encoding) # type: ignore
+            res, num_tokens = self._judge_by_crag(
+                self.sub.loc[i][1], true[1], client, model_name, encoding
+            )  # type: ignore
             if save_sims:
-                ans_sims[i] = {
-                    'judge_result': res['judged'],
-                    'num_tokens': num_tokens
-                }
-            if res['judged']=='Perfect':
+                ans_sims[i] = {"judge_result": res["judged"], "num_tokens": num_tokens}
+            if res["judged"] == "Perfect":
                 score += 1
-            elif res['judged']=='Acceptable':
+            elif res["judged"] == "Acceptable":
                 score += 0.5
-            elif res['judged']=='Incorrect':
+            elif res["judged"] == "Incorrect":
                 score += -1
 
         score /= len(self.ans)
-        print('  time elapsed: {}[s]\n'.format(time.time()-start))
+        print("  time elapsed: {}[s]\n".format(time.time() - start))
         if save_sims:
             return score, ans_sims
         else:
             return score, None
 
-
-    def _judge_by_crag(self, pred: str, true: str, client, model_name: str, encoding)->tuple[dict, int]:
+    def _judge_by_crag(
+        self, pred: str, true: str, client, model_name: str, encoding
+    ) -> tuple[dict, int]:
         system_prompt = """
         与えられた問題のground_truthとanswerを比較してその結果を"Perfect", "Acceptable", "Missing", "Incorrect"の中から一つだけ選んで答えてください. それぞれの定義と規則は以下の通り.
         # 定義
@@ -73,45 +72,48 @@ class CRAGEvaluator(Evaluator):
 
         JSON形式でkeyとして"judged"を含みそのvalueに結果を記載して出力すること.
         """
-        prompt = 'ground_truth: {} answer: {}\n'.format(true, pred)
+        prompt = "ground_truth: {} answer: {}\n".format(true, pred)
         num_tokens = len(encoding.encode(pred))
-        
+
         input_messages = [
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
         ]
         for _ in range(3):
             try:
-                response = client.chat.completions.create(
-                    model = model_name,
-                    temperature = 0,
-                    seed = 0,
-                    timeout = 1200,
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "judgement_schema",
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "judged": {
-                                        "type": "string",
-                                        "enum": ["Perfect", "Acceptable", "Missing", "Incorrect"]
+                response = (
+                    client.chat.completions.create(
+                        model=model_name,
+                        temperature=0,
+                        seed=0,
+                        timeout=1200,
+                        response_format={
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "judgement_schema",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "judged": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Perfect",
+                                                "Acceptable",
+                                                "Missing",
+                                                "Incorrect",
+                                            ],
                                         }
                                     },
-                                "required": ["judged"],
-                                "additionalProperties": False
-                                }
-                            }
+                                    "required": ["judged"],
+                                    "additionalProperties": False,
+                                },
+                            },
                         },
-                    messages=input_messages
-                ).choices[0].message.content
+                        messages=input_messages,
+                    )
+                    .choices[0]
+                    .message.content
+                )
 
                 return json.loads(response), num_tokens
 
