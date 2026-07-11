@@ -1,4 +1,5 @@
 import time
+
 import pandas as pd
 
 
@@ -26,6 +27,6 @@ class FormatSetter:
             "max_num_tokens": self.max_num_tokens,
             "model": self.model,
         }
-        print("  time elapsed: {}[s]".format(time.time() - self.start))
+        print(f"  time elapsed: {time.time() - self.start}[s]")
 
         return data_format

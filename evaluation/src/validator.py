@@ -1,9 +1,10 @@
+import codecs
 import os
 import time
-import codecs
 from typing import Any
-import tiktoken
+
 import pandas as pd
+import tiktoken
 
 
 class Validator:
@@ -14,7 +15,7 @@ class Validator:
         if verbose:
             print("\nValidation details:")
             for k, v in self.data_format.items():
-                print("  {}: {}".format(k, v))
+                print(f"  {k}: {v}")
         self.data = None
         print("\nValidation:")
 
@@ -40,7 +41,7 @@ class Validator:
         self.check_dtype(result)
         self.check_keys(result)
         self.check_details(result)
-        print("  time elapsed: {}[s]".format(time.time() - start))
+        print(f"  time elapsed: {time.time() - start}[s]")
 
     def get_data(self) -> Any:
         return self.data
@@ -70,7 +71,7 @@ class DataFrameValidator(Validator):
                 sp = line.rstrip().split(sep)
                 if len(sp) <= 1 or (len(sp) == 2 and len(sp[-1]) == 0):
                     raise DelimiterError(
-                        "Invalid delimiter found in line {} or not enough data.".format(i + 1)
+                        f"Invalid delimiter found in line {i + 1} or not enough data."
                     )
         try:
             self.data = pd.read_csv(result, header=None, sep=sep, encoding="utf-8", index_col=0)
@@ -85,12 +86,10 @@ class DataFrameValidator(Validator):
         if samples != self.data_format["samples"]:
             raise SampleError("Missing samples or invalid samples found.")
         isnull = self.data.isnull().sum(axis=0)
-        count = 0
-        for k, v in isnull.items():
+        for count, (k, v) in enumerate(isnull.items(), start=1):
             if v:
-                raise NullError("Missing value found in column {}".format(k))
-            count += 1
-            print(msg + "{}%".format(int(100 * count / len(self.data))), end="\r")
+                raise NullError(f"Missing value found in column {k}")
+            print(msg + f"{int(100 * count / len(self.data))}%", end="\r")
         print(msg + "Done")
 
     def check_dtype(self, result) -> None:
@@ -103,16 +102,14 @@ class DataFrameValidator(Validator):
                     len(self.data.columns), len(self.data_format["dtype"])
                 )
             )
-        count = 0
-        for k, v in self.data.dtypes.items():
+        for count, (k, v) in enumerate(self.data.dtypes.items(), start=1):
             if v != self.data_format["dtype"][k - 1]:  # type: ignore
                 raise DtypeError(
                     "Invalid data type found in column {}: {}!={}(expected)".format(
                         k, v, self.data_format["dtype"][k]
                     )
                 )  # type: ignore
-            count += 1
-            print(msg + "{}%".format(int(100 * count / len(self.data))), end="\r")
+            print(msg + f"{int(100 * count / len(self.data))}%", end="\r")
         print(msg + "Done")
 
     def check_keys(self, result) -> None:
@@ -125,8 +122,7 @@ class DataFrameValidator(Validator):
             encoding = tiktoken.get_encoding("cl100k_base")
         msg = "  Checking tokens..."
         print(msg, end="\r")
-        count = 0
-        for i, d in self.data.iterrows():
+        for count, (i, d) in enumerate(self.data.iterrows(), start=1):
             tokens = encoding.encode(d[1])
             if len(tokens) > self.data_format["max_num_tokens"]:
                 raise MaximumExceedError(
@@ -134,8 +130,7 @@ class DataFrameValidator(Validator):
                         i, len(tokens), self.data_format["max_num_tokens"]
                     )
                 )
-            count += 1
-            print(msg + "{}%".format(int(100 * count / len(self.data))), end="\r")
+            print(msg + f"{int(100 * count / len(self.data))}%", end="\r")
         print(msg + "Done")
 
 

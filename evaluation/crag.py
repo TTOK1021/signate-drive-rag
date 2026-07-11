@@ -1,9 +1,10 @@
 import argparse
 import os
-from src.settings import FormatSetter
-from src.validator import DataFrameValidator
+
 from src.dbmanager import DBLoader, ResultHandler
 from src.evaluator import CRAGEvaluator
+from src.settings import FormatSetter
+from src.validator import DataFrameValidator
 
 
 def parse_args():

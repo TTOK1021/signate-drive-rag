@@ -1,5 +1,6 @@
-import time
 import json
+import time
+
 import pandas as pd
 import tiktoken
 from openai import OpenAI
@@ -19,7 +20,7 @@ class Evaluator:
 class CRAGEvaluator(Evaluator):
     def evaluate(self, model_name: str, save_sims: bool = True) -> tuple:
         print("  By CRAG")
-        print("  llm: {}".format(model_name))
+        print(f"  llm: {model_name}")
         try:
             encoding = tiktoken.encoding_for_model(model_name)
         except KeyError:
@@ -43,7 +44,7 @@ class CRAGEvaluator(Evaluator):
                 score += -1
 
         score /= len(self.ans)
-        print("  time elapsed: {}[s]\n".format(time.time() - start))
+        print(f"  time elapsed: {time.time() - start}[s]\n")
         if save_sims:
             return score, ans_sims
         else:
@@ -52,27 +53,34 @@ class CRAGEvaluator(Evaluator):
     def _judge_by_crag(
         self, pred: str, true: str, client, model_name: str, encoding
     ) -> tuple[dict, int]:
-        system_prompt = """
-        与えられた問題のground_truthとanswerを比較してその結果を"Perfect", "Acceptable", "Missing", "Incorrect"の中から一つだけ選んで答えてください. それぞれの定義と規則は以下の通り.
-        # 定義
-        Perfect: answerが問題に正しく回答しており, 幻覚的な内容を含んでいない.
-        Acceptable: answerが問題の回答として有効な内容を含んでいるが, わずかな誤りも含んでいる. ただし, 有効性を壊すほどではない.
-        Missing: answerが「わかりません」,「見つかりません」, 空の回答, または元の質問を明確にするための要求を含んでいる.
-        Incorrect: answerが間違っているか問題と無関係な内容を含んでいる.
-
-        # 数値問題に関する規則
-        正解と完全一致する場合のみ「Perfect」とする。
-        「Acceptable」と判定できるのは、正解値を所定の桁数で四捨五入した結果と一致する場合に限る。
-        単位の有無や接尾辞・補足語の違い（例：「5」と「5ページ」）は同一とみなす。
-
-        # 要素列挙問題に関する規則
-        すべての要素が完全一致した場合のみ「Perfect」とする。
-        部分一致はすべて「Incorrect」とする。
-        「Acceptable」は使用しない。
-
-        JSON形式でkeyとして"judged"を含みそのvalueに結果を記載して出力すること.
-        """
-        prompt = "ground_truth: {} answer: {}\n".format(true, pred)
+        system_prompt = "\n".join(
+            [
+                "与えられた問題のground_truthとanswerを比較して、",
+                '"Perfect", "Acceptable", "Missing", "Incorrect"の中から',
+                "一つだけ選んで答えてください. それぞれの定義と規則は以下の通り.",
+                "# 定義",
+                "Perfect: answerが問題に正しく回答しており, 幻覚的な内容を含んでいない.",
+                "Acceptable: answerが問題の回答として有効な内容を含んでいるが,",
+                "わずかな誤りも含んでいる. ただし, 有効性を壊すほどではない.",
+                "Missing: answerが「わかりません」,「見つかりません」, 空の回答,",
+                "または元の質問を明確にするための要求を含んでいる.",
+                "Incorrect: answerが間違っているか問題と無関係な内容を含んでいる.",
+                "",
+                "# 数値問題に関する規則",
+                "正解と完全一致する場合のみ「Perfect」とする。",
+                "「Acceptable」と判定できるのは、",
+                "正解値を所定の桁数で四捨五入した結果と一致する場合に限る。",
+                "単位の有無や接尾辞・補足語の違い(例:「5」と「5ページ」)は同一とみなす。",
+                "",
+                "# 要素列挙問題に関する規則",
+                "すべての要素が完全一致した場合のみ「Perfect」とする。",
+                "部分一致はすべて「Incorrect」とする。",
+                "「Acceptable」は使用しない。",
+                "",
+                'JSON形式でkeyとして"judged"を含みそのvalueに結果を記載して出力すること.',
+            ]
+        )
+        prompt = f"ground_truth: {true} answer: {pred}\n"
         num_tokens = len(encoding.encode(pred))
 
         input_messages = [
