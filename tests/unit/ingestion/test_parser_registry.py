@@ -12,6 +12,7 @@ from signate_drive_rag.ingestion.parser_registry import (
     DuplicateParserError,
     ParserNotFoundError,
     ParserRegistry,
+    create_default_parser_registry,
 )
 
 
@@ -116,3 +117,25 @@ def test_parser_registry_selection_does_not_depend_on_registration_order(
         first_registry.find_parser(make_source_file(text_path))
     with pytest.raises(AmbiguousParserError):
         second_registry.find_parser(make_source_file(text_path))
+
+
+@pytest.mark.parametrize(
+    ("file_name", "parser_name"),
+    [
+        ("sample.md", "markdown"),
+        ("sample.json", "json"),
+        ("sample.ipynb", "notebook"),
+    ],
+)
+def test_default_parser_registry_selects_structured_document_parsers(
+    tmp_path: Path,
+    file_name: str,
+    parser_name: str,
+) -> None:
+    """標準レジストリで構造化文書パーサーを拡張子から選択できる。"""
+    file_path = tmp_path / file_name
+    file_path.write_text("", encoding="utf-8")
+
+    registry = create_default_parser_registry()
+
+    assert registry.find_parser(make_source_file(file_path)).name == parser_name

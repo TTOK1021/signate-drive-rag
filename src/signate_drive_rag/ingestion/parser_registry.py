@@ -59,3 +59,23 @@ class ParserRegistry:
             )
 
         return matched_parsers[0]
+
+
+def create_default_parser_registry() -> ParserRegistry:
+    """標準パーサーを登録したレジストリを作成する。"""
+    from signate_drive_rag.ingestion.parsers import (
+        JsonDocumentParser,
+        MarkdownParser,
+        NotebookParser,
+        PlainTextParser,
+    )
+
+    registry = ParserRegistry()
+    for parser in (
+        PlainTextParser(),
+        MarkdownParser(),
+        JsonDocumentParser(),
+        NotebookParser(),
+    ):
+        registry.register(parser)
+    return registry
