@@ -11,7 +11,9 @@ import typer
 from dotenv import load_dotenv
 
 from signate_drive_rag.domain import SourceFile
+from signate_drive_rag.extraction import ExtractionService, save_extraction_result
 from signate_drive_rag.ingestion import discover_files
+from signate_drive_rag.ingestion.parser_registry import create_default_parser_registry
 
 DEFAULT_DISPLAY_SUFFIXES = (".pdf", ".xlsx", ".docx", ".pptx", ".py", ".ipynb")
 OTHER_EXTENSION_LABEL = "その他"
@@ -120,3 +122,37 @@ def scan(
         write_manifest_jsonl(source_files, manifest)
         typer.echo("")
         typer.echo(f"manifest: {manifest}")
+
+
+@app.command()
+def extract(
+    root: Annotated[
+        Path,
+        typer.Option("--root", "-r", help="抽出対象の探索ルート。"),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="抽出結果の保存先。"),
+    ] = Path("artifacts") / "extracted",
+) -> None:
+    """指定したルート配下の原本ファイルを一括抽出する。"""
+    source_files = discover_files(root)
+    parser_registry = create_default_parser_registry()
+    extraction_result = ExtractionService(parser_registry).extract(source_files)
+    save_extraction_result(extraction_result, output_dir)
+
+    summary = extraction_result.summary
+    typer.echo(f"探索ルート: {root.resolve()}")
+    typer.echo(f"探索ファイル数: {summary.discovered_files}")
+    typer.echo(f"対応ファイル数: {summary.supported_files}")
+    typer.echo(f"抽出成功: {summary.succeeded_files}")
+    typer.echo(f"抽出失敗: {summary.failed_files}")
+    typer.echo(f"未対応: {summary.unsupported_files}")
+    typer.echo(f"抽出単位数: {summary.total_units}")
+    typer.echo(f"抽出文字数: {summary.total_characters:,}")
+    typer.echo("")
+    typer.echo("出力:")
+    typer.echo("  documents.jsonl")
+    typer.echo("  failures.jsonl")
+    typer.echo("  unsupported.jsonl")
+    typer.echo("  summary.json")
