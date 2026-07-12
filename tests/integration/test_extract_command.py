@@ -62,3 +62,33 @@ def test_extract_command_fails_for_missing_root(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert not output_dir.exists()
+
+
+def test_extract_command_extracts_csv_and_tsv_files(tmp_path: Path) -> None:
+    """extractコマンドでCSV・TSVをsuccessへ分類し、JSONLへ保存する。"""
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "顧客.csv").write_text("顧客名,状態\n山田,承認済み", encoding="utf-8")
+    (root / "売上.tsv").write_text("商品\t金額\nりんご\t100", encoding="utf-8")
+    output_dir = tmp_path / "out"
+
+    result = runner.invoke(
+        app,
+        ["extract", "--root", str(root), "--output-dir", str(output_dir)],
+    )
+
+    assert result.exit_code == 0
+    assert "抽出成功: 2" in result.stdout
+    assert "未対応: 0" in result.stdout
+    documents = [
+        json.loads(line)
+        for line in (output_dir / "documents.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["by_parser"] == {"delimited_text": 2}
+    assert summary["by_suffix"] == {".csv": 1, ".tsv": 1}
+    documents_by_suffix = {document["source"]["suffix"]: document for document in documents}
+    assert documents_by_suffix[".csv"]["parser_name"] == "delimited_text"
+    assert documents_by_suffix[".csv"]["units"][1]["text"] == "顧客名=山田 | 状態=承認済み"
+    assert documents_by_suffix[".tsv"]["units"][1]["text"] == "商品=りんご | 金額=100"
+    assert str(tmp_path) not in (output_dir / "documents.jsonl").read_text(encoding="utf-8")

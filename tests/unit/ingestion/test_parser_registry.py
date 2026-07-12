@@ -125,6 +125,8 @@ def test_parser_registry_selection_does_not_depend_on_registration_order(
         ("sample.md", "markdown"),
         ("sample.json", "json"),
         ("sample.ipynb", "notebook"),
+        ("sample.csv", "delimited_text"),
+        ("sample.tsv", "delimited_text"),
     ],
 )
 def test_default_parser_registry_selects_structured_document_parsers(
@@ -139,3 +141,17 @@ def test_default_parser_registry_selects_structured_document_parsers(
     registry = create_default_parser_registry()
 
     assert registry.find_parser(make_source_file(file_path)).name == parser_name
+
+
+@pytest.mark.parametrize("file_name", ["sample.csv", "sample.tsv"])
+def test_default_parser_registry_selects_delimited_text_without_ambiguity(
+    tmp_path: Path,
+    file_name: str,
+) -> None:
+    """CSV・TSVで既存パーサーとの曖昧性が発生しない。"""
+    file_path = tmp_path / file_name
+    file_path.write_text("A,B\n1,2", encoding="utf-8")
+
+    registry = create_default_parser_registry()
+
+    assert registry.find_parser(make_source_file(file_path)).name == "delimited_text"
