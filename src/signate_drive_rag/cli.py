@@ -10,6 +10,13 @@ from typing import Annotated
 import typer
 from dotenv import load_dotenv
 
+from signate_drive_rag.audit import (
+    AuditInputError,
+    AuditService,
+    load_audit_documents,
+    save_audit_result,
+)
+from signate_drive_rag.audit.service import ISSUE_TYPES
 from signate_drive_rag.domain import SourceFile
 from signate_drive_rag.extraction import ExtractionService, save_extraction_result
 from signate_drive_rag.ingestion import discover_files
@@ -156,3 +163,62 @@ def extract(
     typer.echo("  failures.jsonl")
     typer.echo("  unsupported.jsonl")
     typer.echo("  summary.json")
+
+
+@app.command()
+def audit(
+    documents: Annotated[
+        Path,
+        typer.Option("--documents", help="抽出済みdocuments.jsonlへのパス。"),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="監査結果の保存先。"),
+    ] = Path("artifacts") / "audit",
+    samples_per_parser: Annotated[
+        int,
+        typer.Option("--samples-per-parser", help="パーサーごとのサンプル文書数。"),
+    ] = 3,
+    preview_chars: Annotated[
+        int,
+        typer.Option("--preview-chars", help="サンプル本文プレビューの最大文字数。"),
+    ] = 300,
+    large_unit_chars: Annotated[
+        int,
+        typer.Option("--large-unit-chars", help="巨大unitと判定する文字数。"),
+    ] = 20_000,
+) -> None:
+    """抽出済みdocuments.jsonlの品質を監査する。"""
+    try:
+        audit_documents = load_audit_documents(documents)
+        audit_result = AuditService(
+            large_unit_chars=large_unit_chars,
+            samples_per_parser=samples_per_parser,
+            preview_chars=preview_chars,
+        ).audit(audit_documents)
+    except (AuditInputError, ValueError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+
+    save_audit_result(audit_result, output_dir)
+    summary = audit_result.summary
+
+    typer.echo(f"監査対象: {documents.resolve()}")
+    typer.echo(f"文書数: {summary.documents}")
+    typer.echo(f"抽出単位数: {summary.total_units:,}")
+    typer.echo(f"抽出文字数: {summary.total_characters:,}")
+    typer.echo("")
+    typer.echo("検出事項:")
+    typer.echo(f"  error: {summary.issues_by_severity['error']}")
+    typer.echo(f"  warning: {summary.issues_by_severity['warning']}")
+    typer.echo(f"  info: {summary.issues_by_severity['info']}")
+    typer.echo(f"  合計: {summary.total_issues}")
+    typer.echo("")
+    typer.echo("主な内訳:")
+    for issue_type in ISSUE_TYPES:
+        typer.echo(f"  {issue_type}: {summary.issues_by_type[issue_type]}")
+    typer.echo("")
+    typer.echo("出力:")
+    typer.echo("  summary.json")
+    typer.echo("  issues.jsonl")
+    typer.echo("  samples.jsonl")
