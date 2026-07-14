@@ -17,6 +17,12 @@ from signate_drive_rag.audit import (
     save_audit_result,
 )
 from signate_drive_rag.audit.service import ISSUE_TYPES
+from signate_drive_rag.chunking import (
+    ChunkingService,
+    ChunkInputError,
+    load_chunk_source_documents,
+    save_chunking_result,
+)
 from signate_drive_rag.domain import SourceFile
 from signate_drive_rag.extraction import ExtractionService, save_extraction_result
 from signate_drive_rag.ingestion import discover_files
@@ -222,3 +228,64 @@ def audit(
     typer.echo("  summary.json")
     typer.echo("  issues.jsonl")
     typer.echo("  samples.jsonl")
+
+
+@app.command()
+def chunk(
+    documents: Annotated[
+        Path,
+        typer.Option("--documents", help="抽出済みdocuments.jsonlへのパス。"),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="検索用チャンクの保存先。"),
+    ] = Path("artifacts") / "chunks",
+    max_chars: Annotated[
+        int,
+        typer.Option("--max-chars", help="1チャンクの最大文字数。"),
+    ] = 4_000,
+    overlap_chars: Annotated[
+        int,
+        typer.Option("--overlap-chars", help="分割チャンク間の重複文字数。"),
+    ] = 200,
+    table_max_rows: Annotated[
+        int,
+        typer.Option("--table-max-rows", help="表チャンクに含める最大データ行数。"),
+    ] = 25,
+) -> None:
+    """抽出済みdocuments.jsonlから検索用チャンクを生成する。"""
+    try:
+        source_documents = load_chunk_source_documents(documents)
+        chunking_result = ChunkingService(
+            max_chars=max_chars,
+            overlap_chars=overlap_chars,
+            table_max_rows=table_max_rows,
+        ).chunk(source_documents)
+    except (ChunkInputError, ValueError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+
+    save_chunking_result(chunking_result, output_dir)
+    summary = chunking_result.summary
+    typer.echo(f"入力: {documents.resolve()}")
+    typer.echo(f"元文書数: {summary.source_documents}")
+    typer.echo(f"元unit数: {summary.source_units:,}")
+    typer.echo(f"元文字数: {summary.source_characters:,}")
+    typer.echo("")
+    typer.echo(f"生成チャンク数: {summary.generated_chunks:,}")
+    typer.echo(f"チャンク文字数: {summary.chunk_characters:,}")
+    typer.echo(f"最大チャンク文字数: {summary.maximum_chunk_characters:,}")
+    typer.echo(f"文字数削減率: {summary.character_reduction_rate:.2%}")
+    typer.echo("")
+    typer.echo("issue:")
+    typer.echo(f"  error: {summary.issues_by_severity['error']}")
+    typer.echo(f"  warning: {summary.issues_by_severity['warning']}")
+    typer.echo(f"  info: {summary.issues_by_severity['info']}")
+    typer.echo("")
+    typer.echo("出力:")
+    typer.echo("  chunks.jsonl")
+    typer.echo("  summary.json")
+    typer.echo("  issues.jsonl")
+
+    if summary.issues_by_severity["error"] > 0:
+        raise typer.Exit(code=1)
