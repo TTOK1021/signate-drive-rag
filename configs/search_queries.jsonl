@@ -1,0 +1,30 @@
+{"query_id":"q001","query":"青葉与信マネジメント株式会社","query_type":"exact","expected_relevant":[],"notes":"会社名の完全一致。対象会社配下のファイルが上位に出るか確認する。"}
+{"query_id":"q002","query":"株式会社青嶺不動産アセットマネジメント","query_type":"exact","expected_relevant":[],"notes":"長い会社名の完全一致とパス文脈検索を確認する。"}
+{"query_id":"q003","query":"かえで総合病院","query_type":"exact","expected_relevant":[],"notes":"法人名を省略した検索でも対象プロジェクトを取得できるか確認する。"}
+{"query_id":"q004","query":"みなみ野女性医療センター","query_type":"exact","expected_relevant":[],"notes":"施設名による検索結果とcontext_wordの効果を確認する。"}
+{"query_id":"q005","query":"青葉バイオメディカル機器","query_type":"exact","expected_relevant":[],"notes":"会社名の一部でも対象プロジェクトを取得できるか確認する。"}
+{"query_id":"q006","query":"青葉与信マネジメントの分析結果を確認したい","query_type":"natural","expected_relevant":[],"notes":"会社名と分析結果を組み合わせた自然文検索を確認する。"}
+{"query_id":"q007","query":"かえで総合病院の分析で使用した設定","query_type":"natural","expected_relevant":[],"notes":"対象会社のconfigsや設定値を含むチャンクが上位に出るか確認する。"}
+{"query_id":"q008","query":"みなみ野女性医療センターのデータ前処理方法","query_type":"natural","expected_relevant":[],"notes":"Notebook、Python、Markdownに分散する前処理情報を検索できるか確認する。"}
+{"query_id":"q009","query":"青潮モビリティサービスの実験結果","query_type":"natural","expected_relevant":[],"notes":"experimentsやNotebook出力が適切に取得されるか確認する。"}
+{"query_id":"q010","query":"東都人材プラットフォームのモデル評価方法","query_type":"natural","expected_relevant":[],"notes":"評価指標やモデル性能に関するチャンクが取得されるか確認する。"}
+{"query_id":"q011","query":"random_state","query_type":"identifier","expected_relevant":[],"notes":"Python識別子とアンダースコアの検索を確認する。存在しない場合は実在識別子へ置き換える。"}
+{"query_id":"q012","query":"customer_id","query_type":"identifier","expected_relevant":[],"notes":"CSV列名、JSONキー、Python変数名の横断検索を確認する。存在しない場合は置き換える。"}
+{"query_id":"q013","query":"target_column","query_type":"identifier","expected_relevant":[],"notes":"設定値やコード内識別子の検索を確認する。存在しない場合は置き換える。"}
+{"query_id":"q014","query":"train_test_split","query_type":"identifier","expected_relevant":[],"notes":"関数名を保持した検索と補助トークンの影響を確認する。"}
+{"query_id":"q015","query":"output_dir","query_type":"identifier","expected_relevant":[],"notes":"設定ファイルとPythonコードの両方から識別子を取得できるか確認する。"}
+{"query_id":"q016","query":"2025","query_type":"numeric","expected_relevant":[],"notes":"年の数値検索。結果が多すぎる場合の順位傾向も確認する。"}
+{"query_id":"q017","query":"0.01","query_type":"numeric","expected_relevant":[],"notes":"小数点を含むパラメータ検索を確認する。実データにない場合は実在値へ置き換える。"}
+{"query_id":"q018","query":"0.5","query_type":"numeric","expected_relevant":[],"notes":"閾値や割合として使用される数値の検索を確認する。"}
+{"query_id":"q019","query":"accuracy","query_type":"metric","expected_relevant":[],"notes":"評価指標名をNotebook、JSON、Markdownから検索できるか確認する。"}
+{"query_id":"q020","query":"threshold","query_type":"metric","expected_relevant":[],"notes":"設定値・列名・コード識別子としての閾値検索を確認する。"}
+{"query_id":"q021","query":"analysis_project configs","query_type":"context","expected_relevant":[],"notes":"ディレクトリ名とファイル文脈を使ったcontext_word検索を確認する。"}
+{"query_id":"q022","query":"analysis_project notebooks","query_type":"context","expected_relevant":[],"notes":"Notebook配下のチャンクが上位に出るか確認する。"}
+{"query_id":"q023","query":"analysis_outputs experiments","query_type":"context","expected_relevant":[],"notes":"実験出力ディレクトリのパス検索を確認する。"}
+{"query_id":"q024","query":"reports figures","query_type":"context","expected_relevant":[],"notes":"レポート・図表関連のパス文脈検索を確認する。"}
+{"query_id":"q025","query":"scripts src","query_type":"context","expected_relevant":[],"notes":"スクリプトやソースコード配下の検索結果の偏りを確認する。"}
+{"query_id":"q026","query":"分析に使用したデータと実験結果を確認したい","query_type":"cross_document","expected_relevant":[],"notes":"データと実験結果という複数資料にまたがる自然文検索を確認する。"}
+{"query_id":"q027","query":"設定ファイルと評価結果の両方を確認したい","query_type":"cross_document","expected_relevant":[],"notes":"configsとNotebook・reportsの双方が上位候補へ含まれるか確認する。"}
+{"query_id":"q028","query":"前処理方法とモデル性能が分かる資料","query_type":"cross_document","expected_relevant":[],"notes":"前処理と評価結果をまたぐ検索で、上位結果の多様性を確認する。"}
+{"query_id":"q029","query":"社内の決裁基準","query_type":"internal_rule","expected_relevant":[],"notes":"社内管理フォルダのMarkdown資料を取得できるか確認する。正確なパス確認後に自動評価対象へできる。"}
+{"query_id":"q030","query":"XYZ-NOT-EXIST-999","query_type":"no_match","expected_relevant":[],"notes":"存在しない識別子。無関係な結果を過度に強く返さないか目視確認する。"}

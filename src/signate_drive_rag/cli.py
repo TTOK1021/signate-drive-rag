@@ -4,7 +4,7 @@ import json
 import os
 import unicodedata
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Annotated
 
@@ -40,6 +40,13 @@ from signate_drive_rag.retrieval import (
     load_retrieval_chunks,
     save_bm25_index,
     save_search_results,
+)
+from signate_drive_rag.search_evaluation import (
+    SearchEvaluationInputError,
+    SearchEvaluationService,
+    calculate_query_file_sha256,
+    load_search_evaluation_queries,
+    save_search_evaluation_result,
 )
 
 DEFAULT_DISPLAY_SUFFIXES = (".pdf", ".xlsx", ".docx", ".pptx", ".py", ".ipynb")
@@ -437,3 +444,139 @@ def _preview_text(text: str, preview_chars: int) -> str:
     if len(normalized) <= preview_chars:
         return normalized
     return normalized[:preview_chars] + "..."
+
+
+@app.command()
+def evaluate_search(
+    queries: Annotated[
+        Path,
+        typer.Option("--queries", help="検索評価用JSONLへのパス。"),
+    ],
+    index_dir: Annotated[
+        Path,
+        typer.Option("--index-dir", help="BM25インデックスの保存先。"),
+    ] = Path("artifacts") / "indexes" / "bm25",
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="検索評価結果の保存先。"),
+    ] = Path("artifacts") / "search_evaluation",
+    top_k: Annotated[
+        int,
+        typer.Option("--top-k", help="質問ごとに取得する検索結果数。"),
+    ] = 10,
+    candidate_multiplier: Annotated[
+        int,
+        typer.Option("--candidate-multiplier", help="各チャネルで取得する候補倍率。"),
+    ] = 5,
+    rrf_k: Annotated[
+        int,
+        typer.Option("--rrf-k", help="RRFの順位緩和パラメータ。"),
+    ] = 60,
+    preview_chars: Annotated[
+        int,
+        typer.Option("--preview-chars", help="レビュー用プレビュー文字数。"),
+    ] = 300,
+    report_results_per_query: Annotated[
+        int,
+        typer.Option("--report-results-per-query", help="report.mdに表示する質問ごとの結果数。"),
+    ] = 5,
+) -> None:
+    """BM25検索を複数質問で一括評価する。"""
+    try:
+        _validate_evaluate_search_options(
+            top_k=top_k,
+            candidate_multiplier=candidate_multiplier,
+            rrf_k=rrf_k,
+            preview_chars=preview_chars,
+            report_results_per_query=report_results_per_query,
+        )
+        evaluation_queries = load_search_evaluation_queries(queries)
+        query_file_sha256 = calculate_query_file_sha256(queries)
+        loaded_index = load_bm25_index(index_dir)
+        index_source_sha256 = _index_source_sha256(loaded_index.manifest)
+        retriever = Bm25Retriever(
+            loaded_index,
+            candidate_multiplier=candidate_multiplier,
+            rrf_k=rrf_k,
+        )
+        evaluation_result = SearchEvaluationService(retriever).evaluate(
+            evaluation_queries,
+            top_k=top_k,
+            index_source_sha256=index_source_sha256,
+            query_file_sha256=query_file_sha256,
+            candidate_multiplier=candidate_multiplier,
+            rrf_k=rrf_k,
+            preview_chars=preview_chars,
+            report_results_per_query=report_results_per_query,
+        )
+        save_search_evaluation_result(evaluation_result, output_dir)
+    except (
+        RetrievalIndexError,
+        SearchEvaluationInputError,
+        SearchInputError,
+        ValueError,
+    ) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+
+    summary = evaluation_result.summary
+    typer.echo("検索評価を完了しました")
+    typer.echo("")
+    typer.echo(f"質問数: {summary.total_queries}")
+    typer.echo(f"自動評価対象: {summary.auto_evaluated_queries}")
+    typer.echo(f"目視確認対象: {summary.manual_review_queries}")
+    typer.echo("")
+    typer.echo(
+        f"Hit@1: {summary.hit_at_1_count}/{summary.auto_evaluated_queries} "
+        f"({summary.hit_at_1_rate:.2%})"
+    )
+    typer.echo(
+        f"Hit@3: {summary.hit_at_3_count}/{summary.auto_evaluated_queries} "
+        f"({summary.hit_at_3_rate:.2%})"
+    )
+    typer.echo(
+        f"Hit@5: {summary.hit_at_5_count}/{summary.auto_evaluated_queries} "
+        f"({summary.hit_at_5_rate:.2%})"
+    )
+    typer.echo(
+        f"Hit@10: {summary.hit_at_10_count}/{summary.auto_evaluated_queries} "
+        f"({summary.hit_at_10_rate:.2%})"
+    )
+    typer.echo(f"MRR: {summary.mean_reciprocal_rank:.4f}")
+    typer.echo("")
+    typer.echo("出力:")
+    typer.echo("  summary.json")
+    typer.echo("  query_results.jsonl")
+    typer.echo("  review.csv")
+    typer.echo("  report.md")
+
+
+def _validate_evaluate_search_options(
+    *,
+    top_k: int,
+    candidate_multiplier: int,
+    rrf_k: int,
+    preview_chars: int,
+    report_results_per_query: int,
+) -> None:
+    """検索評価CLIの数値オプションを検証する。"""
+    if top_k <= 0:
+        raise ValueError("top_kは1以上である必要があります。")
+    if candidate_multiplier <= 0:
+        raise ValueError("candidate_multiplierは1以上である必要があります。")
+    if rrf_k <= 0:
+        raise ValueError("rrf_kは1以上である必要があります。")
+    if preview_chars < 0:
+        raise ValueError("preview_charsは0以上である必要があります。")
+    if report_results_per_query < 0:
+        raise ValueError("report_results_per_queryは0以上である必要があります。")
+    if report_results_per_query > top_k:
+        raise ValueError("report_results_per_queryはtop_k以下である必要があります。")
+
+
+def _index_source_sha256(manifest: Mapping[str, object]) -> str:
+    """BM25 manifestから入力chunks.jsonlのSHA-256を取得する。"""
+    value = manifest.get("source_sha256")
+    if not isinstance(value, str):
+        raise ValueError("manifest.source_sha256が文字列ではありません。")
+    return value
