@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from signate_drive_rag.domain import ExtractedDocument, ExtractedUnit, SourceFile
+from signate_drive_rag.domain import ExtractedDocument, ExtractedUnit, ExtractionIssue, SourceFile
 from signate_drive_rag.extraction.models import (
     BatchExtractionResult,
     ExtractionFailure,
@@ -74,6 +74,7 @@ def _document_to_record(document: ExtractedDocument) -> dict[str, Any]:
         "source": _source_file_to_record(document.source_file),
         "parser_name": document.parser_name,
         "units": [_unit_to_record(unit) for unit in document.units],
+        "issues": [_issue_to_record(issue) for issue in document.issues],
     }
 
 
@@ -96,6 +97,17 @@ def _unit_to_record(unit: ExtractedUnit) -> dict[str, Any]:
         "text": unit.text,
         "locator": unit.locator,
         "metadata": unit.metadata,
+    }
+
+
+def _issue_to_record(issue: ExtractionIssue) -> dict[str, Any]:
+    """ExtractionIssueをJSON互換の辞書へ変換する。"""
+    return {
+        "issue_type": issue.issue_type,
+        "severity": issue.severity,
+        "message": issue.message,
+        "locator": issue.locator,
+        "metadata": issue.metadata,
     }
 
 
@@ -131,8 +143,10 @@ def _summary_to_record(summary: ExtractionSummary) -> dict[str, Any]:
         "unsupported_files": summary.unsupported_files,
         "total_units": summary.total_units,
         "total_characters": summary.total_characters,
+        "total_issues": summary.total_issues,
         "by_parser": dict(sorted(summary.by_parser.items())),
         "by_suffix": dict(sorted(summary.by_suffix.items())),
+        "issues_by_type": dict(sorted(summary.issues_by_type.items())),
     }
 
 

@@ -275,6 +275,7 @@ def audit(
     typer.echo("  summary.json")
     typer.echo("  issues.jsonl")
     typer.echo("  samples.jsonl")
+    typer.echo("  report.md")
 
 
 @app.command()

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from signate_drive_rag.audit.models import AuditDocument, AuditUnit
+from signate_drive_rag.audit.models import AuditDocument, AuditIssue, AuditUnit
 from signate_drive_rag.domain.extracted_document import JsonValue
 
 
@@ -59,13 +59,29 @@ def _parse_document_line(line: str, documents_path: Path, line_number: int) -> A
         _parse_unit(unit_value, documents_path, line_number, unit_index)
         for unit_index, unit_value in enumerate(units_value)
     )
+    relative_path = _require_str(source, "relative_path", documents_path, line_number)
+    issues_value = record_mapping.get("issues", [])
+    if not isinstance(issues_value, list):
+        raise _field_error(documents_path, line_number, "issues", "配列である必要があります。")
+    issues = tuple(
+        _parse_issue(
+            issue_value,
+            documents_path,
+            line_number,
+            relative_path=relative_path,
+            parser_name=parser_name,
+            issue_index=issue_index,
+        )
+        for issue_index, issue_value in enumerate(issues_value)
+    )
     return AuditDocument(
-        relative_path=_require_str(source, "relative_path", documents_path, line_number),
+        relative_path=relative_path,
         name=_require_str(source, "name", documents_path, line_number),
         suffix=_require_str(source, "suffix", documents_path, line_number),
         size_bytes=_require_int(source, "size_bytes", documents_path, line_number),
         parser_name=parser_name,
         units=units,
+        extraction_issues=issues,
     )
 
 
@@ -95,6 +111,44 @@ def _parse_unit(
     return AuditUnit(
         unit_type=_require_str(unit, "unit_type", documents_path, line_number),
         text=_require_str(unit, "text", documents_path, line_number),
+        locator=locator,
+        metadata=cast(dict[str, JsonValue], metadata),
+    )
+
+
+def _parse_issue(
+    issue_value: Any,
+    documents_path: Path,
+    line_number: int,
+    *,
+    relative_path: str,
+    parser_name: str,
+    issue_index: int,
+) -> AuditIssue:
+    """抽出時issueを監査用issueへ変換する。"""
+    field_prefix = f"issues[{issue_index}]"
+    issue = _require_mapping(issue_value, documents_path, line_number, field_prefix)
+    locator = _required(issue, "locator", documents_path, line_number)
+    if locator is not None and not isinstance(locator, str):
+        raise _field_error(
+            documents_path,
+            line_number,
+            f"{field_prefix}.locator",
+            "文字列またはnullである必要があります。",
+        )
+    metadata = _require_mapping(
+        _required(issue, "metadata", documents_path, line_number),
+        documents_path,
+        line_number,
+        f"{field_prefix}.metadata",
+    )
+    return AuditIssue(
+        relative_path=relative_path,
+        parser_name=parser_name,
+        issue_type=_require_str(issue, "issue_type", documents_path, line_number),
+        severity=_require_str(issue, "severity", documents_path, line_number),
+        message=_require_str(issue, "message", documents_path, line_number),
+        unit_index=None,
         locator=locator,
         metadata=cast(dict[str, JsonValue], metadata),
     )

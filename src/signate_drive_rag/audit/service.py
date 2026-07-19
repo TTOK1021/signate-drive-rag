@@ -30,12 +30,30 @@ ISSUE_TYPES = (
     "invalid_locator_format",
     "duplicate_unit_text",
     "large_unit",
+    "low_text_content",
+    "image_dominant_document",
+    "pdf_page_needs_ocr",
+    "pdf_partially_needs_ocr",
+    "pdf_page_extraction_failed",
+    "pdf_encrypted_unreadable",
+    "pdf_unreadable",
 )
 
 _LOCATOR_PREFIX_BY_UNIT_TYPE = {
+    "docx_heading": "item:",
+    "docx_paragraph": "item:",
+    "docx_list_item": "item:",
+    "docx_table": "table:",
+    "docx_table_row": "table:",
     "markdown_section": "line:",
     "notebook_cell": "cell:",
     "notebook_output": "cell:",
+    "pdf_page_text": "page:",
+    "pptx_slide_title": "slide:",
+    "pptx_slide_text": "slide:",
+    "pptx_speaker_notes": "slide:",
+    "pptx_slide_table": "slide:",
+    "pptx_slide_table_row": "slide:",
     "table_header": "row:",
     "table_row": "row:",
 }
@@ -102,7 +120,7 @@ class AuditService:
 
 def _audit_document(document: AuditDocument, large_unit_chars: int) -> list[AuditIssue]:
     """1文書に対して監査ルールを適用する。"""
-    issues: list[AuditIssue] = []
+    issues: list[AuditIssue] = list(document.extraction_issues)
     character_count = sum(len(unit.text) for unit in document.units)
     severity_for_empty_document = "info" if document.size_bytes == 0 else "warning"
 
@@ -116,7 +134,7 @@ def _audit_document(document: AuditDocument, large_unit_chars: int) -> list[Audi
                 message=f"抽出単位が0件です。source_size_bytes={document.size_bytes}",
             )
         )
-    if character_count == 0:
+    if character_count == 0 and not _has_issue(document.extraction_issues, "document_has_no_text"):
         issues.append(
             AuditIssue(
                 relative_path=document.relative_path,
@@ -151,6 +169,11 @@ def _audit_document(document: AuditDocument, large_unit_chars: int) -> list[Audi
             )
         )
     return issues
+
+
+def _has_issue(issues: Sequence[AuditIssue], issue_type: str) -> bool:
+    """パーサー由来issueと監査由来issueの重複を避ける。"""
+    return any(issue.issue_type == issue_type for issue in issues)
 
 
 def _audit_unit(
@@ -270,10 +293,23 @@ def _build_summary(
         units_without_required_locator=sum(metric.locator_issue_count for metric in metrics),
         duplicate_units=sum(metric.duplicate_unit_count for metric in metrics),
         large_units=issue_type_counts["large_unit"],
+        pdf_pages=_pdf_page_count(documents),
+        pdf_pages_with_text=sum(
+            1
+            for document in documents
+            for unit in document.units
+            if unit.unit_type == "pdf_page_text"
+        ),
+        pdf_pages_needing_ocr=issue_type_counts["pdf_page_needs_ocr"],
         total_issues=len(issues),
         issues_by_severity=severity_counts,
         issues_by_type=issue_type_counts,
-        by_parser=_build_parser_summaries(documents, metrics_by_path),
+        units_by_type=dict(
+            sorted(
+                Counter(unit.unit_type for document in documents for unit in document.units).items()
+            )
+        ),
+        by_parser=_build_parser_summaries(documents, metrics_by_path, issues),
         document_character_statistics=distribution_statistics(
             [metric.character_count for metric in metrics]
         ),
@@ -283,9 +319,38 @@ def _build_summary(
     )
 
 
+def _pdf_page_count(documents: Sequence[AuditDocument]) -> int:
+    """pypdf由来metadataからPDFページ総数を文書単位で合計する。"""
+    total = 0
+    for document in documents:
+        if document.parser_name != "pypdf":
+            continue
+        page_count = _document_page_count(document)
+        if page_count is not None:
+            total += page_count
+            continue
+        total += sum(1 for unit in document.units if unit.unit_type == "pdf_page_text")
+    return total
+
+
+def _document_page_count(document: AuditDocument) -> int | None:
+    for unit in document.units:
+        value = unit.metadata.get("page_count")
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    for issue in document.extraction_issues:
+        if issue.metadata is None:
+            continue
+        value = issue.metadata.get("page_count")
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
 def _build_parser_summaries(
     documents: Sequence[AuditDocument],
     metrics_by_path: dict[str, _DocumentMetrics],
+    issues: Sequence[AuditIssue],
 ) -> dict[str, ParserAuditSummary]:
     """パーサー別の集計を作成する。"""
     documents_by_parser: dict[str, list[AuditDocument]] = defaultdict(list)
@@ -296,6 +361,7 @@ def _build_parser_summaries(
     for parser_name in sorted(documents_by_parser):
         parser_documents = documents_by_parser[parser_name]
         metrics = [metrics_by_path[document.relative_path] for document in parser_documents]
+        parser_relative_paths = {document.relative_path for document in parser_documents}
         summaries[parser_name] = ParserAuditSummary(
             documents=len(parser_documents),
             units=sum(metric.unit_count for metric in metrics),
@@ -306,6 +372,7 @@ def _build_parser_summaries(
             empty_units=sum(metric.empty_unit_count for metric in metrics),
             units_without_required_locator=sum(metric.locator_issue_count for metric in metrics),
             duplicate_units=sum(metric.duplicate_unit_count for metric in metrics),
+            issues=sum(1 for issue in issues if issue.relative_path in parser_relative_paths),
             document_character_statistics=distribution_statistics(
                 [metric.character_count for metric in metrics]
             ),

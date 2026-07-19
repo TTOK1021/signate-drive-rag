@@ -71,6 +71,9 @@ def _build_summary(
     """一括抽出結果から集計値を作成する。"""
     by_parser = Counter(document.parser_name for document in documents)
     by_suffix = Counter(source_file.suffix.lower() for source_file in source_files)
+    issues_by_type = Counter(
+        issue.issue_type for document in documents for issue in document.issues
+    )
     total_units = sum(len(document.units) for document in documents)
     total_characters = sum(len(unit.text) for document in documents for unit in document.units)
     succeeded_files = len(documents)
@@ -85,8 +88,10 @@ def _build_summary(
         unsupported_files=unsupported_count,
         total_units=total_units,
         total_characters=total_characters,
+        total_issues=sum(issues_by_type.values()),
         by_parser=dict(sorted(by_parser.items())),
         by_suffix=dict(sorted(by_suffix.items())),
+        issues_by_type=dict(sorted(issues_by_type.items())),
     )
 
 

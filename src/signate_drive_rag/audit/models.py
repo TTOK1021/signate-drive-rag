@@ -25,6 +25,7 @@ class AuditDocument:
     size_bytes: int
     parser_name: str
     units: tuple[AuditUnit, ...]
+    extraction_issues: tuple["AuditIssue", ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,7 @@ class AuditIssue:
     message: str
     unit_index: int | None = None
     locator: str | None = None
+    metadata: dict[str, JsonValue] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +67,7 @@ class ParserAuditSummary:
     empty_units: int
     units_without_required_locator: int
     duplicate_units: int
+    issues: int
     document_character_statistics: DistributionStatistics
     unit_character_statistics: DistributionStatistics
 
@@ -83,9 +86,13 @@ class AuditSummary:
     units_without_required_locator: int
     duplicate_units: int
     large_units: int
+    pdf_pages: int
+    pdf_pages_with_text: int
+    pdf_pages_needing_ocr: int
     total_issues: int
     issues_by_severity: dict[str, int]
     issues_by_type: dict[str, int]
+    units_by_type: dict[str, int]
     by_parser: dict[str, ParserAuditSummary]
     document_character_statistics: DistributionStatistics
     unit_character_statistics: DistributionStatistics

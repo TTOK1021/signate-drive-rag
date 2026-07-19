@@ -39,6 +39,7 @@ def parser_summary() -> ParserAuditSummary:
         empty_units=0,
         units_without_required_locator=0,
         duplicate_units=0,
+        issues=0,
         document_character_statistics=statistics(),
         unit_character_statistics=statistics(),
     )
@@ -94,6 +95,10 @@ def audit_result(*, include_issue: bool = True, include_sample: bool = True) -> 
             units_without_required_locator=0,
             duplicate_units=0,
             large_units=1 if include_issue else 0,
+            units_by_type={"markdown_section": 1},
+            pdf_pages=0,
+            pdf_pages_with_text=0,
+            pdf_pages_needing_ocr=0,
             total_issues=len(issues),
             issues_by_severity={"error": 0, "warning": len(issues), "info": 0},
             issues_by_type={

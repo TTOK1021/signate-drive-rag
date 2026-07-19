@@ -18,6 +18,7 @@ from signate_drive_rag.audit.models import (
 SUMMARY_FILE_NAME = "summary.json"
 ISSUES_FILE_NAME = "issues.jsonl"
 SAMPLES_FILE_NAME = "samples.jsonl"
+REPORT_FILE_NAME = "report.md"
 
 
 def save_audit_result(result: AuditResult, output_dir: Path) -> None:
@@ -37,6 +38,7 @@ def save_audit_result(result: AuditResult, output_dir: Path) -> None:
             )
         ),
     )
+    _write_text_atomic(output_dir / REPORT_FILE_NAME, _build_report(result))
 
 
 def _write_jsonl_atomic(path: Path, records: Iterable[dict[str, Any]]) -> None:
@@ -68,6 +70,18 @@ def _write_json_atomic(path: Path, record: dict[str, Any]) -> None:
         raise
 
 
+def _write_text_atomic(path: Path, text: str) -> None:
+    """テキストを一時ファイルへ書き、成功後に置き換える。"""
+    temporary_path = path.with_name(f"{path.name}.tmp")
+    try:
+        temporary_path.write_text(text, encoding="utf-8", newline="\n")
+        temporary_path.replace(path)
+    except Exception:
+        if temporary_path.exists():
+            temporary_path.unlink()
+        raise
+
+
 def _summary_to_record(summary: AuditSummary) -> dict[str, Any]:
     """AuditSummaryをJSON互換の辞書へ変換する。"""
     return {
@@ -81,9 +95,13 @@ def _summary_to_record(summary: AuditSummary) -> dict[str, Any]:
         "units_without_required_locator": summary.units_without_required_locator,
         "duplicate_units": summary.duplicate_units,
         "large_units": summary.large_units,
+        "pdf_pages": summary.pdf_pages,
+        "pdf_pages_with_text": summary.pdf_pages_with_text,
+        "pdf_pages_needing_ocr": summary.pdf_pages_needing_ocr,
         "total_issues": summary.total_issues,
         "issues_by_severity": dict(sorted(summary.issues_by_severity.items())),
         "issues_by_type": dict(sorted(summary.issues_by_type.items())),
+        "units_by_type": dict(sorted(summary.units_by_type.items())),
         "by_parser": {
             parser_name: _parser_summary_to_record(parser_summary)
             for parser_name, parser_summary in sorted(summary.by_parser.items())
@@ -107,11 +125,67 @@ def _parser_summary_to_record(summary: ParserAuditSummary) -> dict[str, Any]:
         "empty_units": summary.empty_units,
         "units_without_required_locator": summary.units_without_required_locator,
         "duplicate_units": summary.duplicate_units,
+        "issues": summary.issues,
         "document_character_statistics": _distribution_to_record(
             summary.document_character_statistics
         ),
         "unit_character_statistics": _distribution_to_record(summary.unit_character_statistics),
     }
+
+
+def _build_report(result: AuditResult) -> str:
+    """主要なOffice・PDF抽出品質をMarkdownで要約する。"""
+    summary = result.summary
+    lines = [
+        "# 抽出品質監査レポート",
+        "",
+        "## Office・PDF抽出結果",
+        "",
+        "| parser | 文書数 | unit数 | 文字数 | issue数 |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for parser_name in ("docling_docx", "docling_pptx", "pypdf"):
+        parser_summary = summary.by_parser.get(parser_name)
+        if parser_summary is None:
+            lines.append(f"| {parser_name} | 0 | 0 | 0 | 0 |")
+            continue
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    parser_name,
+                    str(parser_summary.documents),
+                    str(parser_summary.units),
+                    str(parser_summary.characters),
+                    str(parser_summary.issues),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "## PDF OCR候補",
+            "",
+            f"- PDFページ数: {summary.pdf_pages}",
+            f"- テキストありページ: {summary.pdf_pages_with_text}",
+            f"- OCR候補ページ: {summary.pdf_pages_needing_ocr}",
+            f"- OCR候補文書: {_pdf_documents_with_ocr_issue(result)}",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _pdf_documents_with_ocr_issue(result: AuditResult) -> int:
+    return len(
+        {
+            issue.relative_path
+            for issue in result.issues
+            if issue.issue_type
+            in {"pdf_page_needs_ocr", "pdf_partially_needs_ocr", "image_dominant_document"}
+        }
+    )
 
 
 def _distribution_to_record(statistics: DistributionStatistics) -> dict[str, Any]:
@@ -136,6 +210,7 @@ def _issue_to_record(issue: AuditIssue) -> dict[str, Any]:
         "message": issue.message,
         "unit_index": issue.unit_index,
         "locator": issue.locator,
+        "metadata": issue.metadata or {},
     }
 
 
