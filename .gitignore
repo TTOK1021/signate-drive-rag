@@ -40,6 +40,7 @@ evaluation/submit/*.csv
 Thumbs.db
 
 # Test and analysis caches
+tmp/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
