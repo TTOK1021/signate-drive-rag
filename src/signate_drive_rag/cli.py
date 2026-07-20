@@ -47,6 +47,8 @@ from signate_drive_rag.domain import SourceFile
 from signate_drive_rag.extraction import ExtractionService, save_extraction_result
 from signate_drive_rag.ingestion import discover_files, discover_files_with_ignored
 from signate_drive_rag.ingestion.parser_registry import create_default_parser_registry
+from signate_drive_rag.ocr.models import OcrOptions
+from signate_drive_rag.ocr.prepare import OcrModelPrepareError, prepare_easyocr_models
 from signate_drive_rag.retrieval import (
     SEARCH_CHANNELS,
     Bm25Retriever,
@@ -194,10 +196,43 @@ def extract(
         Path,
         typer.Option("--output-dir", help="抽出結果の保存先。"),
     ] = Path("artifacts") / "extracted",
+    enable_ocr: Annotated[
+        bool,
+        typer.Option("--enable-ocr", help="PNGとOCR候補PDFページへローカルOCRを適用する。"),
+    ] = False,
+    ocr_model_dir: Annotated[
+        Path,
+        typer.Option("--ocr-model-dir", help="EasyOCRモデルを保存したディレクトリ。"),
+    ] = Path("artifacts") / "models" / "easyocr",
+    ocr_device: Annotated[
+        str,
+        typer.Option("--ocr-device", help="OCR実行デバイス。初期実装ではcpu/gpuを受け付ける。"),
+    ] = "cpu",
+    ocr_languages: Annotated[
+        str,
+        typer.Option("--ocr-languages", help="OCR言語をカンマ区切りで指定する。"),
+    ] = "ja,en",
 ) -> None:
     """指定したルート配下の原本ファイルを一括抽出する。"""
-    source_files = discover_files(root)
-    parser_registry = create_default_parser_registry()
+    try:
+        ocr_options = (
+            OcrOptions(
+                languages=parse_ocr_languages(ocr_languages),
+                gpu=parse_ocr_device(ocr_device),
+                model_dir=ocr_model_dir,
+            )
+            if enable_ocr
+            else None
+        )
+        source_files = discover_files(root)
+        parser_registry = (
+            create_default_parser_registry(ocr_options=ocr_options)
+            if ocr_options is not None
+            else create_default_parser_registry()
+        )
+    except ValueError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
     extraction_result = ExtractionService(parser_registry).extract(source_files)
     save_extraction_result(extraction_result, output_dir)
 
@@ -216,6 +251,65 @@ def extract(
     typer.echo("  failures.jsonl")
     typer.echo("  unsupported.jsonl")
     typer.echo("  summary.json")
+
+
+def parse_ocr_languages(languages: str) -> tuple[str, ...]:
+    """CLIのカンマ区切り言語指定を決定的なtupleへ変換する。"""
+    parsed = tuple(language.strip() for language in languages.split(",") if language.strip())
+    if not parsed:
+        raise ValueError("ocr-languagesには1つ以上の言語を指定してください。")
+    return parsed
+
+
+def parse_ocr_device(device: str) -> bool:
+    """EasyOCRのgpuフラグへ変換するため、初期実装ではcpu/gpuだけを許可する。"""
+    normalized = device.strip().lower()
+    if normalized == "cpu":
+        return False
+    if normalized == "gpu":
+        return True
+    raise ValueError("ocr-deviceはcpuまたはgpuを指定してください。")
+
+
+@app.command("prepare-ocr-models")
+def prepare_ocr_models(
+    model_dir: Annotated[
+        Path,
+        typer.Option("--model-dir", help="EasyOCRモデルの保存先ディレクトリ。"),
+    ] = Path("artifacts") / "models" / "easyocr",
+    languages: Annotated[
+        str,
+        typer.Option("--languages", help="準備するOCR言語をカンマ区切りで指定する。"),
+    ] = "ja,en",
+    device: Annotated[
+        str,
+        typer.Option("--device", help="モデル準備時のデバイス。cpu/gpuを指定する。"),
+    ] = "cpu",
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="既存manifestを上書きする。"),
+    ] = False,
+) -> None:
+    """EasyOCRモデルを明示的に準備し、manifestを保存する。"""
+    try:
+        parsed_languages = parse_ocr_languages(languages)
+        gpu = parse_ocr_device(device)
+        manifest = prepare_easyocr_models(
+            model_dir=model_dir,
+            languages=parsed_languages,
+            gpu=gpu,
+            overwrite=overwrite,
+        )
+    except (OcrModelPrepareError, ValueError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+
+    typer.echo("OCRモデル準備を完了しました")
+    typer.echo(f"モデルディレクトリ: {model_dir}")
+    typer.echo(f"言語: {', '.join(parsed_languages)}")
+    typer.echo(f"モデルファイル数: {len(manifest['model_files'])}")
+    typer.echo("出力:")
+    typer.echo("  manifest.json")
 
 
 @app.command()

@@ -5,6 +5,9 @@ from types import MappingProxyType
 
 from signate_drive_rag.domain.source_file import SourceFile
 from signate_drive_rag.ingestion.parsers.base import DocumentParser
+from signate_drive_rag.ocr.engine import EasyOcrEngine
+from signate_drive_rag.ocr.models import OcrOptions
+from signate_drive_rag.ocr.pdf_renderer import Pypdfium2PageRenderer
 
 
 class ParserRegistryError(Exception):
@@ -61,7 +64,7 @@ class ParserRegistry:
         return matched_parsers[0]
 
 
-def create_default_parser_registry() -> ParserRegistry:
+def create_default_parser_registry(ocr_options: OcrOptions | None = None) -> ParserRegistry:
     """標準パーサーを登録したレジストリを作成する。"""
     from signate_drive_rag.ingestion.parsers import (
         DelimitedTextParser,
@@ -71,11 +74,37 @@ def create_default_parser_registry() -> ParserRegistry:
         NotebookParser,
         PdfParser,
         PlainTextParser,
+        PngOcrParser,
         PptxParser,
         XlsxParser,
     )
+    from signate_drive_rag.ingestion.parsers.pdf_ocr import PdfPageOcrProcessor
 
     registry = ParserRegistry()
+    pdf_parser: DocumentParser
+    png_parser: DocumentParser | None = None
+    if ocr_options is None:
+        pdf_parser = PdfParser()
+    else:
+        ocr_engine = EasyOcrEngine(
+            languages=ocr_options.languages,
+            model_dir=ocr_options.model_dir,
+            gpu=ocr_options.gpu,
+            download_enabled=False,
+        )
+        pdf_processor = (
+            PdfPageOcrProcessor(
+                ocr_engine=ocr_engine,
+                renderer=Pypdfium2PageRenderer(),
+                options=ocr_options,
+            )
+            if ocr_options.enable_pdf_ocr
+            else None
+        )
+        pdf_parser = PdfParser(ocr_processor=pdf_processor)
+        if ocr_options.enable_png_ocr:
+            png_parser = PngOcrParser(ocr_engine=ocr_engine, options=ocr_options)
+
     for parser in (
         PlainTextParser(),
         MarkdownParser(),
@@ -84,8 +113,10 @@ def create_default_parser_registry() -> ParserRegistry:
         DelimitedTextParser(),
         DocxParser(),
         PptxParser(),
-        PdfParser(),
+        pdf_parser,
         XlsxParser(),
     ):
         registry.register(parser)
+    if png_parser is not None:
+        registry.register(png_parser)
     return registry

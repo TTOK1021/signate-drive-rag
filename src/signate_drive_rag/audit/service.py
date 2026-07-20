@@ -37,6 +37,20 @@ ISSUE_TYPES = (
     "pdf_page_extraction_failed",
     "pdf_encrypted_unreadable",
     "pdf_unreadable",
+    "pdf_page_ocr_applied",
+    "pdf_page_ocr_no_text",
+    "pdf_page_ocr_low_confidence",
+    "pdf_page_ocr_failed",
+    "ocr_model_unavailable",
+    "ocr_engine_initialization_failed",
+    "ocr_processing_failed",
+    "ocr_no_text",
+    "ocr_low_confidence",
+    "ocr_region_metadata_truncated",
+    "image_unreadable",
+    "image_invalid_dimensions",
+    "image_pixel_limit_exceeded",
+    "image_mode_conversion_failed",
     "xlsx_not_ooxml",
     "xlsx_zip_unreadable",
     "xlsx_uncompressed_size_limit_exceeded",
@@ -60,7 +74,9 @@ _LOCATOR_PREFIX_BY_UNIT_TYPE = {
     "markdown_section": "line:",
     "notebook_cell": "cell:",
     "notebook_output": "cell:",
+    "image_ocr_text": "image:",
     "pdf_page_text": "page:",
+    "pdf_page_ocr": "page:",
     "pptx_slide_title": "slide:",
     "pptx_slide_text": "slide:",
     "pptx_speaker_notes": "slide:",
@@ -316,6 +332,53 @@ def _build_summary(
             if unit.unit_type == "pdf_page_text"
         ),
         pdf_pages_needing_ocr=issue_type_counts["pdf_page_needs_ocr"],
+        png_documents=sum(1 for document in documents if document.parser_name == "easyocr_png"),
+        png_ocr_success=sum(
+            1
+            for document in documents
+            if document.parser_name == "easyocr_png"
+            and any(unit.unit_type == "image_ocr_text" for unit in document.units)
+        ),
+        png_ocr_no_text=sum(
+            1
+            for document in documents
+            if document.parser_name == "easyocr_png"
+            and _has_document_issue_type(document, {"ocr_no_text"})
+        ),
+        png_ocr_failed=sum(
+            1
+            for document in documents
+            if document.parser_name == "easyocr_png"
+            and _has_document_issue_type(
+                document,
+                {
+                    "ocr_model_unavailable",
+                    "ocr_engine_initialization_failed",
+                    "ocr_processing_failed",
+                    "image_unreadable",
+                    "image_invalid_dimensions",
+                    "image_pixel_limit_exceeded",
+                    "image_mode_conversion_failed",
+                },
+            )
+        ),
+        pdf_pages_ocr_targeted=issue_type_counts["pdf_page_needs_ocr"],
+        pdf_pages_ocr_success=issue_type_counts["pdf_page_ocr_applied"],
+        pdf_pages_ocr_no_text=issue_type_counts["pdf_page_ocr_no_text"],
+        pdf_pages_ocr_failed=issue_type_counts["pdf_page_ocr_failed"],
+        ocr_regions_detected=_ocr_metadata_sum(documents, "recognized_region_count"),
+        ocr_regions_included=_ocr_metadata_sum(documents, "included_region_count"),
+        ocr_regions_low_confidence=_ocr_metadata_sum(
+            documents,
+            "excluded_low_confidence_region_count",
+        ),
+        ocr_characters=_ocr_metadata_sum(documents, "ocr_text_characters"),
+        mean_ocr_confidence=_mean_ocr_confidence(documents),
+        documents_with_ocr=sum(
+            1
+            for document in documents
+            if any(unit.unit_type in {"image_ocr_text", "pdf_page_ocr"} for unit in document.units)
+        ),
         xlsx_sheets=_xlsx_metric_sum(documents, "sheet_count"),
         xlsx_row_blocks=sum(
             1
@@ -379,6 +442,46 @@ def _document_page_count(document: AuditDocument) -> int | None:
         if isinstance(value, int) and not isinstance(value, bool):
             return value
     return None
+
+
+def _has_document_issue_type(document: AuditDocument, issue_types: set[str]) -> bool:
+    """OCR失敗はunitが無い場合もあるため、文書issueから集計する。"""
+    return any(issue.issue_type in issue_types for issue in document.extraction_issues)
+
+
+def _ocr_metadata_sum(documents: Sequence[AuditDocument], key: str) -> int:
+    """OCR unit metadataから件数を合算する。"""
+    total = 0
+    for document in documents:
+        for unit in document.units:
+            if unit.unit_type not in {"image_ocr_text", "pdf_page_ocr"}:
+                continue
+            value = unit.metadata.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                total += value
+    return total
+
+
+def _mean_ocr_confidence(documents: Sequence[AuditDocument]) -> float:
+    """unit単位の平均信頼度を、採用領域数で重み付けして平均する。"""
+    confidence_weight_sum = 0.0
+    region_count = 0
+    for document in documents:
+        for unit in document.units:
+            if unit.unit_type not in {"image_ocr_text", "pdf_page_ocr"}:
+                continue
+            confidence = unit.metadata.get("mean_confidence")
+            count = unit.metadata.get("included_region_count")
+            if (
+                isinstance(confidence, int | float)
+                and not isinstance(confidence, bool)
+                and isinstance(count, int)
+                and not isinstance(count, bool)
+                and count > 0
+            ):
+                confidence_weight_sum += float(confidence) * count
+                region_count += count
+    return confidence_weight_sum / region_count if region_count > 0 else 0.0
 
 
 def _xlsx_metric_sum(documents: Sequence[AuditDocument], key: str) -> int:

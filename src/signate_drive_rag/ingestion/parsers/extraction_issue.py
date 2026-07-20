@@ -10,6 +10,20 @@ PDF_PARTIALLY_NEEDS_OCR = "pdf_partially_needs_ocr"
 PDF_PAGE_EXTRACTION_FAILED = "pdf_page_extraction_failed"
 PDF_ENCRYPTED_UNREADABLE = "pdf_encrypted_unreadable"
 PDF_UNREADABLE = "pdf_unreadable"
+PDF_PAGE_OCR_APPLIED = "pdf_page_ocr_applied"
+PDF_PAGE_OCR_NO_TEXT = "pdf_page_ocr_no_text"
+PDF_PAGE_OCR_LOW_CONFIDENCE = "pdf_page_ocr_low_confidence"
+PDF_PAGE_OCR_FAILED = "pdf_page_ocr_failed"
+OCR_MODEL_UNAVAILABLE = "ocr_model_unavailable"
+OCR_ENGINE_INITIALIZATION_FAILED = "ocr_engine_initialization_failed"
+OCR_PROCESSING_FAILED = "ocr_processing_failed"
+OCR_NO_TEXT = "ocr_no_text"
+OCR_LOW_CONFIDENCE = "ocr_low_confidence"
+OCR_REGION_METADATA_TRUNCATED = "ocr_region_metadata_truncated"
+IMAGE_UNREADABLE = "image_unreadable"
+IMAGE_INVALID_DIMENSIONS = "image_invalid_dimensions"
+IMAGE_PIXEL_LIMIT_EXCEEDED = "image_pixel_limit_exceeded"
+IMAGE_MODE_CONVERSION_FAILED = "image_mode_conversion_failed"
 XLSX_NOT_OOXML = "xlsx_not_ooxml"
 XLSX_ZIP_UNREADABLE = "xlsx_zip_unreadable"
 XLSX_UNCOMPRESSED_SIZE_LIMIT_EXCEEDED = "xlsx_uncompressed_size_limit_exceeded"
@@ -32,6 +46,20 @@ ISSUE_SEVERITY_BY_TYPE = {
     PDF_PAGE_EXTRACTION_FAILED: "info",
     PDF_ENCRYPTED_UNREADABLE: "error",
     PDF_UNREADABLE: "error",
+    PDF_PAGE_OCR_APPLIED: "info",
+    PDF_PAGE_OCR_NO_TEXT: "warning",
+    PDF_PAGE_OCR_LOW_CONFIDENCE: "info",
+    PDF_PAGE_OCR_FAILED: "warning",
+    OCR_MODEL_UNAVAILABLE: "warning",
+    OCR_ENGINE_INITIALIZATION_FAILED: "warning",
+    OCR_PROCESSING_FAILED: "warning",
+    OCR_NO_TEXT: "warning",
+    OCR_LOW_CONFIDENCE: "info",
+    OCR_REGION_METADATA_TRUNCATED: "info",
+    IMAGE_UNREADABLE: "error",
+    IMAGE_INVALID_DIMENSIONS: "error",
+    IMAGE_PIXEL_LIMIT_EXCEEDED: "error",
+    IMAGE_MODE_CONVERSION_FAILED: "error",
     XLSX_NOT_OOXML: "error",
     XLSX_ZIP_UNREADABLE: "error",
     XLSX_UNCOMPRESSED_SIZE_LIMIT_EXCEEDED: "error",

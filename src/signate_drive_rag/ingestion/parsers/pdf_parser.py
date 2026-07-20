@@ -17,6 +17,7 @@ from signate_drive_rag.ingestion.parsers.extraction_issue import (
     PDF_PARTIALLY_NEEDS_OCR,
     extraction_issue,
 )
+from signate_drive_rag.ingestion.parsers.pdf_ocr import PdfPageOcrProcessor
 
 MIN_TEXT_CHARACTERS_PER_PAGE = 20
 MIN_TEXT_CHARACTERS_PER_DOCUMENT = 50
@@ -106,6 +107,7 @@ class PdfParser:
     def __init__(
         self,
         extractor: PdfTextExtractor | None = None,
+        ocr_processor: PdfPageOcrProcessor | None = None,
         *,
         min_text_characters_per_page: int = MIN_TEXT_CHARACTERS_PER_PAGE,
         min_text_characters_per_document: int = MIN_TEXT_CHARACTERS_PER_DOCUMENT,
@@ -113,6 +115,7 @@ class PdfParser:
     ) -> None:
         """しきい値はパーサー設定として保持し、CLI引数には公開しない。"""
         self._extractor = extractor if extractor is not None else PypdfTextExtractor()
+        self._ocr_processor = ocr_processor
         self._min_text_characters_per_page = min_text_characters_per_page
         self._min_text_characters_per_document = min_text_characters_per_document
         self._image_dominant_page_ratio = image_dominant_page_ratio
@@ -129,12 +132,26 @@ class PdfParser:
     def parse(self, source_file: SourceFile) -> ExtractedDocument:
         """PDFをページ単位に抽出し、OCR候補issueを記録する。"""
         extraction = self._extractor.extract(source_file)
-        units, issues = _units_and_issues(
+        units, issues, ocr_target_pages = _units_and_issues(
             extraction,
             min_text_characters_per_page=self._min_text_characters_per_page,
             min_text_characters_per_document=self._min_text_characters_per_document,
             image_dominant_page_ratio=self._image_dominant_page_ratio,
         )
+        if self._ocr_processor is not None:
+            ocr_units: list[ExtractedUnit] = []
+            ocr_issues: list[ExtractionIssue] = []
+            for page_number in ocr_target_pages:
+                unit, page_issues = self._ocr_processor.recognize_page(
+                    source_file,
+                    page_number=page_number,
+                    page_count=extraction.page_count,
+                )
+                if unit is not None:
+                    ocr_units.append(unit)
+                ocr_issues.extend(page_issues)
+            units = tuple(sorted([*units, *ocr_units], key=_unit_sort_key))
+            issues = tuple([*issues, *ocr_issues])
         return ExtractedDocument(
             source_file=source_file,
             parser_name=self.name,
@@ -149,7 +166,7 @@ def _units_and_issues(
     min_text_characters_per_page: int,
     min_text_characters_per_document: int,
     image_dominant_page_ratio: float,
-) -> tuple[tuple[ExtractedUnit, ...], tuple[ExtractionIssue, ...]]:
+) -> tuple[tuple[ExtractedUnit, ...], tuple[ExtractionIssue, ...], tuple[int, ...]]:
     issues: list[ExtractionIssue] = []
     prepared_pages: list[tuple[PdfPageExtraction, str, int, bool]] = []
 
@@ -208,7 +225,18 @@ def _units_and_issues(
             image_dominant_page_ratio=image_dominant_page_ratio,
         )
     )
-    return tuple(units), tuple(issues)
+    ocr_target_pages = tuple(
+        page.page_number
+        for page, _normalized_text, _text_characters, needs_ocr in prepared_pages
+        if needs_ocr
+    )
+    return tuple(units), tuple(issues), ocr_target_pages
+
+
+def _unit_sort_key(unit: ExtractedUnit) -> tuple[int, str]:
+    page_number = unit.metadata.get("page_number")
+    normalized_page = page_number if isinstance(page_number, int) else 0
+    return normalized_page, unit.locator or ""
 
 
 def normalize_pdf_text(text: str) -> str:

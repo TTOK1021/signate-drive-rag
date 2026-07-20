@@ -11,10 +11,14 @@ dependencies = [
     "bm25s>=0.3.9",
     "defusedxml==0.7.1",
     "docling==2.113.0",
+    "easyocr==1.7.2",
+    "numpy==2.4.6",
     "openpyxl==3.1.5",
+    "pillow==12.3.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
     "pypdf==6.14.2",
+    "pypdfium2==5.12.1",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
@@ -80,6 +84,11 @@ addopts = [
     "-ra",
     "--strict-config",
     "--strict-markers",
+    "-m",
+    "not ocr_real",
+]
+markers = [
+    "ocr_real: ローカルOCRモデルを使用する低頻度の実モデルスモークテスト。",
 ]
 
 [tool.coverage.run]

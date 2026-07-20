@@ -13,6 +13,7 @@ from signate_drive_rag.ingestion.parsers.markdown import MarkdownParser
 from signate_drive_rag.ingestion.parsers.notebook import NotebookFormatError, NotebookParser
 from signate_drive_rag.ingestion.parsers.pdf_parser import PdfParser, PdfParserError
 from signate_drive_rag.ingestion.parsers.plain_text import PlainTextParser
+from signate_drive_rag.ingestion.parsers.png_ocr_parser import PngOcrParser
 from signate_drive_rag.ingestion.parsers.pptx_parser import PptxParser
 from signate_drive_rag.ingestion.parsers.xlsx_parser import XlsxParser, XlsxParserError
 
@@ -31,6 +32,7 @@ __all__ = [
     "PdfParser",
     "PdfParserError",
     "PlainTextParser",
+    "PngOcrParser",
     "PptxParser",
     "XlsxParser",
     "XlsxParserError",

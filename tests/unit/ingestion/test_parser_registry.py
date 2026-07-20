@@ -14,6 +14,7 @@ from signate_drive_rag.ingestion.parser_registry import (
     ParserRegistry,
     create_default_parser_registry,
 )
+from signate_drive_rag.ocr import OcrOptions
 
 
 def make_source_file(path: Path) -> SourceFile:
@@ -158,6 +159,23 @@ def test_default_parser_registry_keeps_unsupported_file_behavior(tmp_path: Path)
 
     with pytest.raises(ParserNotFoundError):
         registry.find_parser(make_source_file(file_path))
+
+
+def test_default_parser_registry_selects_png_parser_only_when_ocr_is_enabled(
+    tmp_path: Path,
+) -> None:
+    """OCR有効時だけPNGパーサーを登録することを確認する。"""
+    file_path = tmp_path / "sample.png"
+    file_path.write_bytes(b"png")
+
+    default_registry = create_default_parser_registry()
+    with pytest.raises(ParserNotFoundError):
+        default_registry.find_parser(make_source_file(file_path))
+
+    ocr_registry = create_default_parser_registry(
+        ocr_options=OcrOptions(model_dir=tmp_path / "models")
+    )
+    assert ocr_registry.find_parser(make_source_file(file_path)).name == "easyocr_png"
 
 
 @pytest.mark.parametrize("file_name", ["sample.csv", "sample.tsv"])

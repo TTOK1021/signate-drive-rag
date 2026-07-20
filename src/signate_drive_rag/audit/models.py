@@ -89,6 +89,20 @@ class AuditSummary:
     pdf_pages: int
     pdf_pages_with_text: int
     pdf_pages_needing_ocr: int
+    png_documents: int
+    png_ocr_success: int
+    png_ocr_no_text: int
+    png_ocr_failed: int
+    pdf_pages_ocr_targeted: int
+    pdf_pages_ocr_success: int
+    pdf_pages_ocr_no_text: int
+    pdf_pages_ocr_failed: int
+    ocr_regions_detected: int
+    ocr_regions_included: int
+    ocr_regions_low_confidence: int
+    ocr_characters: int
+    mean_ocr_confidence: float
+    documents_with_ocr: int
     xlsx_sheets: int
     xlsx_row_blocks: int
     xlsx_non_empty_cells: int
