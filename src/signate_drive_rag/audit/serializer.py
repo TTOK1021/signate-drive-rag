@@ -98,6 +98,17 @@ def _summary_to_record(summary: AuditSummary) -> dict[str, Any]:
         "pdf_pages": summary.pdf_pages,
         "pdf_pages_with_text": summary.pdf_pages_with_text,
         "pdf_pages_needing_ocr": summary.pdf_pages_needing_ocr,
+        "xlsx_sheets": summary.xlsx_sheets,
+        "xlsx_row_blocks": summary.xlsx_row_blocks,
+        "xlsx_non_empty_cells": summary.xlsx_non_empty_cells,
+        "xlsx_formula_cells": summary.xlsx_formula_cells,
+        "xlsx_formula_without_cached_values": summary.xlsx_formula_without_cached_values,
+        "xlsx_merged_ranges": summary.xlsx_merged_ranges,
+        "xlsx_excel_tables": summary.xlsx_excel_tables,
+        "xlsx_hidden_sheets": summary.xlsx_hidden_sheets,
+        "xlsx_empty_sheets": summary.xlsx_empty_sheets,
+        "xlsx_large_sheets": summary.xlsx_large_sheets,
+        "xlsx_very_wide_sheets": summary.xlsx_very_wide_sheets,
         "total_issues": summary.total_issues,
         "issues_by_severity": dict(sorted(summary.issues_by_severity.items())),
         "issues_by_type": dict(sorted(summary.issues_by_type.items())),
@@ -165,6 +176,32 @@ def _build_report(result: AuditResult) -> str:
     lines.extend(
         [
             "",
+            "## XLSX抽出結果",
+            "",
+            "| 指標 | 件数 |",
+            "|---|---:|",
+            f"| XLSX文書 | {_xlsx_documents(result)} |",
+            f"| シート | {summary.xlsx_sheets} |",
+            f"| 行ブロック | {summary.xlsx_row_blocks} |",
+            f"| 非空セル | {summary.xlsx_non_empty_cells} |",
+            f"| 数式セル | {summary.xlsx_formula_cells} |",
+            f"| 結合範囲 | {summary.xlsx_merged_ranges} |",
+            f"| Excelテーブル | {summary.xlsx_excel_tables} |",
+            f"| 非表示シート | {summary.xlsx_hidden_sheets} |",
+            f"| 空シート | {summary.xlsx_empty_sheets} |",
+            f"| 大規模シート | {summary.xlsx_large_sheets} |",
+            "",
+            "## XLSX issue",
+            "",
+            "| issue | 件数 |",
+            "|---|---:|",
+            (
+                "| xlsx_formula_cached_value_missing | "
+                f"{summary.issues_by_type.get('xlsx_formula_cached_value_missing', 0)} |"
+            ),
+            f"| xlsx_large_sheet | {summary.issues_by_type.get('xlsx_large_sheet', 0)} |",
+            f"| xlsx_very_wide_sheet | {summary.issues_by_type.get('xlsx_very_wide_sheet', 0)} |",
+            "",
             "## PDF OCR候補",
             "",
             f"- PDFページ数: {summary.pdf_pages}",
@@ -186,6 +223,11 @@ def _pdf_documents_with_ocr_issue(result: AuditResult) -> int:
             in {"pdf_page_needs_ocr", "pdf_partially_needs_ocr", "image_dominant_document"}
         }
     )
+
+
+def _xlsx_documents(result: AuditResult) -> int:
+    summary = result.summary.by_parser.get("openpyxl_xlsx")
+    return 0 if summary is None else summary.documents
 
 
 def _distribution_to_record(statistics: DistributionStatistics) -> dict[str, Any]:

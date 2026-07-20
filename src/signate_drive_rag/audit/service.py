@@ -37,6 +37,18 @@ ISSUE_TYPES = (
     "pdf_page_extraction_failed",
     "pdf_encrypted_unreadable",
     "pdf_unreadable",
+    "xlsx_not_ooxml",
+    "xlsx_zip_unreadable",
+    "xlsx_uncompressed_size_limit_exceeded",
+    "xlsx_compression_ratio_limit_exceeded",
+    "xlsx_unreadable",
+    "xlsx_sheet_has_no_cells",
+    "xlsx_hidden_sheet",
+    "xlsx_metadata_limited",
+    "xlsx_formula_cached_value_missing",
+    "xlsx_large_sheet",
+    "xlsx_very_wide_sheet",
+    "xlsx_large_cell_value",
 )
 
 _LOCATOR_PREFIX_BY_UNIT_TYPE = {
@@ -56,6 +68,9 @@ _LOCATOR_PREFIX_BY_UNIT_TYPE = {
     "pptx_slide_table_row": "slide:",
     "table_header": "row:",
     "table_row": "row:",
+    "xlsx_workbook_summary": "workbook",
+    "xlsx_sheet_summary": "sheet:",
+    "xlsx_table_rows": "sheet:",
 }
 
 
@@ -301,6 +316,25 @@ def _build_summary(
             if unit.unit_type == "pdf_page_text"
         ),
         pdf_pages_needing_ocr=issue_type_counts["pdf_page_needs_ocr"],
+        xlsx_sheets=_xlsx_metric_sum(documents, "sheet_count"),
+        xlsx_row_blocks=sum(
+            1
+            for document in documents
+            for unit in document.units
+            if unit.unit_type == "xlsx_table_rows"
+        ),
+        xlsx_non_empty_cells=_xlsx_metric_sum(documents, "non_empty_cell_count"),
+        xlsx_formula_cells=_xlsx_metric_sum(documents, "formula_cell_count"),
+        xlsx_formula_without_cached_values=_xlsx_metric_sum(
+            documents,
+            "formula_without_cached_value_count",
+        ),
+        xlsx_merged_ranges=_xlsx_metric_sum(documents, "merged_range_count"),
+        xlsx_excel_tables=_xlsx_metric_sum(documents, "excel_table_count"),
+        xlsx_hidden_sheets=issue_type_counts["xlsx_hidden_sheet"],
+        xlsx_empty_sheets=issue_type_counts["xlsx_sheet_has_no_cells"],
+        xlsx_large_sheets=issue_type_counts["xlsx_large_sheet"],
+        xlsx_very_wide_sheets=issue_type_counts["xlsx_very_wide_sheet"],
         total_issues=len(issues),
         issues_by_severity=severity_counts,
         issues_by_type=issue_type_counts,
@@ -345,6 +379,22 @@ def _document_page_count(document: AuditDocument) -> int | None:
         if isinstance(value, int) and not isinstance(value, bool):
             return value
     return None
+
+
+def _xlsx_metric_sum(documents: Sequence[AuditDocument], key: str) -> int:
+    """workbook summary metadataからXLSX文書単位の値を集計する。"""
+    total = 0
+    for document in documents:
+        if document.parser_name != "openpyxl_xlsx":
+            continue
+        for unit in document.units:
+            if unit.unit_type != "xlsx_workbook_summary":
+                continue
+            value = unit.metadata.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                total += value
+            break
+    return total
 
 
 def _build_parser_summaries(

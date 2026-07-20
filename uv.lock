@@ -1764,7 +1764,9 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "bm25s" },
+    { name = "defusedxml" },
     { name = "docling" },
+    { name = "openpyxl" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pypdf" },
@@ -1787,7 +1789,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bm25s", specifier = ">=0.3.9" },
+    { name = "defusedxml", specifier = "==0.7.1" },
     { name = "docling", specifier = "==2.113.0" },
+    { name = "openpyxl", specifier = "==3.1.5" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pypdf", specifier = "==6.14.2" },

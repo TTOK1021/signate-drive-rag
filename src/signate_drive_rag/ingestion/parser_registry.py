@@ -72,6 +72,7 @@ def create_default_parser_registry() -> ParserRegistry:
         PdfParser,
         PlainTextParser,
         PptxParser,
+        XlsxParser,
     )
 
     registry = ParserRegistry()
@@ -84,6 +85,7 @@ def create_default_parser_registry() -> ParserRegistry:
         DocxParser(),
         PptxParser(),
         PdfParser(),
+        XlsxParser(),
     ):
         registry.register(parser)
     return registry

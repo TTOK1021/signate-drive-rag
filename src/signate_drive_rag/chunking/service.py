@@ -48,6 +48,9 @@ KNOWN_UNIT_TYPES = {
     "pptx_slide_table",
     "pptx_slide_table_row",
     "pdf_page_text",
+    "xlsx_workbook_summary",
+    "xlsx_sheet_summary",
+    "xlsx_table_rows",
 }
 TABLE_HEADER_UNIT_TYPES = frozenset({"table_header", "docx_table", "pptx_slide_table"})
 TABLE_ROW_UNIT_TYPES = frozenset({"table_row", "docx_table_row", "pptx_slide_table_row"})
@@ -184,6 +187,16 @@ class ChunkingService:
             ]
 
         issues: list[ChunkIssue] = []
+        if unit.unit_type == "xlsx_table_rows":
+            return [
+                _RawChunk(
+                    unit_type=unit.unit_type,
+                    text=unit.text,
+                    locator=unit.locator,
+                    source_unit_indices=(unit_index,),
+                    metadata=_unit_metadata_without_split(unit),
+                )
+            ], issues
         if unit.unit_type not in KNOWN_UNIT_TYPES:
             issues.append(
                 ChunkIssue(
@@ -541,6 +554,22 @@ def _unit_metadata(
             "original_unit_characters": len(unit.text),
             "start_character": segment.start,
             "end_character": segment.end,
+        }
+    )
+    return metadata
+
+
+def _unit_metadata_without_split(unit: ChunkSourceUnit) -> dict[str, JsonValue]:
+    """XLSX表ブロックは既に分割済みなので、自由文overlap用metadataを付けない。"""
+    metadata = dict(unit.metadata)
+    metadata.update(
+        {
+            "source_locator": unit.locator,
+            "split_index": 0,
+            "split_count": 1,
+            "original_unit_characters": len(unit.text),
+            "start_character": 0,
+            "end_character": len(unit.text),
         }
     )
     return metadata

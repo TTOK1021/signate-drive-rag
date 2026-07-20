@@ -131,6 +131,8 @@ def test_parser_registry_selection_does_not_depend_on_registration_order(
         ("sample.pptx", "docling_pptx"),
         ("sample.pdf", "pypdf"),
         ("SAMPLE.PDF", "pypdf"),
+        ("sample.xlsx", "openpyxl_xlsx"),
+        ("SAMPLE.XLSX", "openpyxl_xlsx"),
     ],
 )
 def test_default_parser_registry_selects_structured_document_parsers(

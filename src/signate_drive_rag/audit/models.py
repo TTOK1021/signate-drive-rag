@@ -89,6 +89,17 @@ class AuditSummary:
     pdf_pages: int
     pdf_pages_with_text: int
     pdf_pages_needing_ocr: int
+    xlsx_sheets: int
+    xlsx_row_blocks: int
+    xlsx_non_empty_cells: int
+    xlsx_formula_cells: int
+    xlsx_formula_without_cached_values: int
+    xlsx_merged_ranges: int
+    xlsx_excel_tables: int
+    xlsx_hidden_sheets: int
+    xlsx_empty_sheets: int
+    xlsx_large_sheets: int
+    xlsx_very_wide_sheets: int
     total_issues: int
     issues_by_severity: dict[str, int]
     issues_by_type: dict[str, int]

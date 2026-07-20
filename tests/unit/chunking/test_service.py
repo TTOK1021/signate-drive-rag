@@ -256,6 +256,28 @@ def test_chunking_service_chunks_office_text_table_and_pdf_page_units() -> None:
                     unit("ページ2本文" * 5, unit_type="pdf_page_text", locator="page:2"),
                 ),
             ),
+            document(
+                "book.xlsx",
+                parser_name="openpyxl_xlsx",
+                units=(
+                    unit(
+                        "Excelワークブック",
+                        unit_type="xlsx_workbook_summary",
+                        locator="workbook",
+                    ),
+                    unit(
+                        "シート名: 集計",
+                        unit_type="xlsx_sheet_summary",
+                        locator="sheet:集計",
+                    ),
+                    unit(
+                        "シート: 集計\n範囲: A1:B2\n列: A | B\n行1: A | B\n行2: 1 | 2",
+                        unit_type="xlsx_table_rows",
+                        locator="sheet:集計/range:A1:B2",
+                        metadata={"sheet_name": "集計", "range": "A1:B2"},
+                    ),
+                ),
+            ),
         ]
     )
 
@@ -264,6 +286,8 @@ def test_chunking_service_chunks_office_text_table_and_pdf_page_units() -> None:
     assert by_path[("office.docx", "table:1/row:2-2")].unit_type == "table_rows"
     assert by_path[("slides.pptx", "slide:2/table:1/row:2-2")].unit_type == "table_rows"
     assert by_path[("paper.pdf", "page:1")].metadata["source_locator"] == "page:1"
+    assert by_path[("book.xlsx", "sheet:集計/range:A1:B2")].metadata["sheet_name"] == "集計"
+    assert by_path[("book.xlsx", "sheet:集計/range:A1:B2")].metadata["range"] == "A1:B2"
     assert all(
         chunk.locator in {"slide:1/item:1", "slide:2/item:2"}
         for chunk in result.chunks
