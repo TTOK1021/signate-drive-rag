@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from signate_drive_rag.ocr.device import is_torch_cuda_available
 from signate_drive_rag.ocr.models import OcrImage, OcrTextRegion
 from signate_drive_rag.ocr.ordering import order_ocr_regions
 
@@ -58,6 +59,11 @@ class EasyOcrEngine:
     def recognize(self, image: OcrImage) -> tuple[OcrTextRegion, ...]:
         """EasyOCR出力を共通の位置付き領域へ変換する。"""
         reader = self._get_reader()
+        if self._gpu and not is_torch_cuda_available():
+            raise OcrEngineInitializationError(
+                "OCRでGPUが指定されましたが、CUDA対応Torchを利用できません。"
+            )
+
         try:
             raw_results = reader.readtext(
                 image.image_array,
@@ -79,6 +85,10 @@ class EasyOcrEngine:
         if not self._download_enabled and not self._model_dir.exists():
             raise OcrModelUnavailableError(
                 f"OCRモデルディレクトリが存在しません: {self._model_dir}"
+            )
+        if self._gpu and not is_torch_cuda_available():
+            raise OcrEngineInitializationError(
+                "OCRでGPUが指定されましたが、CUDA対応Torchを利用できません。"
             )
 
         try:

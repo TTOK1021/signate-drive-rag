@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 
+from signate_drive_rag.ocr.device import resolve_ocr_gpu_flag
 from signate_drive_rag.ocr.engine import EasyOcrEngine, OcrModelUnavailableError
 from signate_drive_rag.ocr.image_loader import load_png_ocr_image
 from signate_drive_rag.ocr.models import OcrOptions
@@ -33,7 +34,7 @@ def test_easyocr_model_recognizes_generated_english_image(tmp_path: Path) -> Non
     engine = EasyOcrEngine(
         languages=("ja", "en"),
         model_dir=model_dir,
-        gpu=False,
+        gpu=resolve_ocr_gpu_flag("auto"),
         download_enabled=False,
     )
 

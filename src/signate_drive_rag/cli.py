@@ -47,6 +47,7 @@ from signate_drive_rag.domain import SourceFile
 from signate_drive_rag.extraction import ExtractionService, save_extraction_result
 from signate_drive_rag.ingestion import discover_files, discover_files_with_ignored
 from signate_drive_rag.ingestion.parser_registry import create_default_parser_registry
+from signate_drive_rag.ocr.device import resolve_ocr_gpu_flag
 from signate_drive_rag.ocr.models import OcrOptions
 from signate_drive_rag.ocr.prepare import OcrModelPrepareError, prepare_easyocr_models
 from signate_drive_rag.retrieval import (
@@ -206,8 +207,8 @@ def extract(
     ] = Path("artifacts") / "models" / "easyocr",
     ocr_device: Annotated[
         str,
-        typer.Option("--ocr-device", help="OCR実行デバイス。初期実装ではcpu/gpuを受け付ける。"),
-    ] = "cpu",
+        typer.Option("--ocr-device", help="OCR実行デバイス。cpu/gpu/autoを受け付ける。"),
+    ] = "auto",
     ocr_languages: Annotated[
         str,
         typer.Option("--ocr-languages", help="OCR言語をカンマ区切りで指定する。"),
@@ -262,13 +263,8 @@ def parse_ocr_languages(languages: str) -> tuple[str, ...]:
 
 
 def parse_ocr_device(device: str) -> bool:
-    """EasyOCRのgpuフラグへ変換するため、初期実装ではcpu/gpuだけを許可する。"""
-    normalized = device.strip().lower()
-    if normalized == "cpu":
-        return False
-    if normalized == "gpu":
-        return True
-    raise ValueError("ocr-deviceはcpuまたはgpuを指定してください。")
+    """EasyOCRのgpuフラグへ変換し、autoではCUDA対応Torchを優先する。"""
+    return resolve_ocr_gpu_flag(device)
 
 
 @app.command("prepare-ocr-models")
@@ -283,8 +279,8 @@ def prepare_ocr_models(
     ] = "ja,en",
     device: Annotated[
         str,
-        typer.Option("--device", help="モデル準備時のデバイス。cpu/gpuを指定する。"),
-    ] = "cpu",
+        typer.Option("--device", help="モデル準備時のデバイス。cpu/gpu/autoを指定する。"),
+    ] = "auto",
     overwrite: Annotated[
         bool,
         typer.Option("--overwrite", help="既存manifestを上書きする。"),

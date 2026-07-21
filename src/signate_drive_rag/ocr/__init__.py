@@ -1,5 +1,6 @@
 """ローカルOCR処理の共通基盤。"""
 
+from signate_drive_rag.ocr.device import is_torch_cuda_available, resolve_ocr_gpu_flag
 from signate_drive_rag.ocr.engine import (
     EasyOcrEngine,
     OcrEngine,
@@ -31,6 +32,8 @@ __all__ = [
     "PdfPageRenderer",
     "Pypdfium2PageRenderer",
     "build_ocr_unit_result",
+    "is_torch_cuda_available",
     "load_png_ocr_image",
     "prepare_easyocr_models",
+    "resolve_ocr_gpu_flag",
 ]

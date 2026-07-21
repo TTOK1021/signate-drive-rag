@@ -23,6 +23,8 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "structlog>=26.1.0",
+    "torch==2.11.0+cu126",
+    "torchvision==0.26.0+cu126",
     "typer>=0.12.5,<0.25.0",
 ]
 
@@ -41,6 +43,15 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.15.20",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
 
 
 [tool.ruff]
