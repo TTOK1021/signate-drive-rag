@@ -18,6 +18,7 @@ from signate_drive_rag.audit.models import (
 SUMMARY_FILE_NAME = "summary.json"
 ISSUES_FILE_NAME = "issues.jsonl"
 SAMPLES_FILE_NAME = "samples.jsonl"
+REPORT_FILE_NAME = "report.md"
 
 
 def save_audit_result(result: AuditResult, output_dir: Path) -> None:
@@ -37,6 +38,7 @@ def save_audit_result(result: AuditResult, output_dir: Path) -> None:
             )
         ),
     )
+    _write_text_atomic(output_dir / REPORT_FILE_NAME, _build_report(result))
 
 
 def _write_jsonl_atomic(path: Path, records: Iterable[dict[str, Any]]) -> None:
@@ -68,6 +70,18 @@ def _write_json_atomic(path: Path, record: dict[str, Any]) -> None:
         raise
 
 
+def _write_text_atomic(path: Path, text: str) -> None:
+    """テキストを一時ファイルへ書き、成功後に置き換える。"""
+    temporary_path = path.with_name(f"{path.name}.tmp")
+    try:
+        temporary_path.write_text(text, encoding="utf-8", newline="\n")
+        temporary_path.replace(path)
+    except Exception:
+        if temporary_path.exists():
+            temporary_path.unlink()
+        raise
+
+
 def _summary_to_record(summary: AuditSummary) -> dict[str, Any]:
     """AuditSummaryをJSON互換の辞書へ変換する。"""
     return {
@@ -81,9 +95,38 @@ def _summary_to_record(summary: AuditSummary) -> dict[str, Any]:
         "units_without_required_locator": summary.units_without_required_locator,
         "duplicate_units": summary.duplicate_units,
         "large_units": summary.large_units,
+        "pdf_pages": summary.pdf_pages,
+        "pdf_pages_with_text": summary.pdf_pages_with_text,
+        "pdf_pages_needing_ocr": summary.pdf_pages_needing_ocr,
+        "png_documents": summary.png_documents,
+        "png_ocr_success": summary.png_ocr_success,
+        "png_ocr_no_text": summary.png_ocr_no_text,
+        "png_ocr_failed": summary.png_ocr_failed,
+        "pdf_pages_ocr_targeted": summary.pdf_pages_ocr_targeted,
+        "pdf_pages_ocr_success": summary.pdf_pages_ocr_success,
+        "pdf_pages_ocr_no_text": summary.pdf_pages_ocr_no_text,
+        "pdf_pages_ocr_failed": summary.pdf_pages_ocr_failed,
+        "ocr_regions_detected": summary.ocr_regions_detected,
+        "ocr_regions_included": summary.ocr_regions_included,
+        "ocr_regions_low_confidence": summary.ocr_regions_low_confidence,
+        "ocr_characters": summary.ocr_characters,
+        "mean_ocr_confidence": summary.mean_ocr_confidence,
+        "documents_with_ocr": summary.documents_with_ocr,
+        "xlsx_sheets": summary.xlsx_sheets,
+        "xlsx_row_blocks": summary.xlsx_row_blocks,
+        "xlsx_non_empty_cells": summary.xlsx_non_empty_cells,
+        "xlsx_formula_cells": summary.xlsx_formula_cells,
+        "xlsx_formula_without_cached_values": summary.xlsx_formula_without_cached_values,
+        "xlsx_merged_ranges": summary.xlsx_merged_ranges,
+        "xlsx_excel_tables": summary.xlsx_excel_tables,
+        "xlsx_hidden_sheets": summary.xlsx_hidden_sheets,
+        "xlsx_empty_sheets": summary.xlsx_empty_sheets,
+        "xlsx_large_sheets": summary.xlsx_large_sheets,
+        "xlsx_very_wide_sheets": summary.xlsx_very_wide_sheets,
         "total_issues": summary.total_issues,
         "issues_by_severity": dict(sorted(summary.issues_by_severity.items())),
         "issues_by_type": dict(sorted(summary.issues_by_type.items())),
+        "units_by_type": dict(sorted(summary.units_by_type.items())),
         "by_parser": {
             parser_name: _parser_summary_to_record(parser_summary)
             for parser_name, parser_summary in sorted(summary.by_parser.items())
@@ -107,11 +150,121 @@ def _parser_summary_to_record(summary: ParserAuditSummary) -> dict[str, Any]:
         "empty_units": summary.empty_units,
         "units_without_required_locator": summary.units_without_required_locator,
         "duplicate_units": summary.duplicate_units,
+        "issues": summary.issues,
         "document_character_statistics": _distribution_to_record(
             summary.document_character_statistics
         ),
         "unit_character_statistics": _distribution_to_record(summary.unit_character_statistics),
     }
+
+
+def _build_report(result: AuditResult) -> str:
+    """主要なOffice・PDF抽出品質をMarkdownで要約する。"""
+    summary = result.summary
+    lines = [
+        "# 抽出品質監査レポート",
+        "",
+        "## Office・PDF抽出結果",
+        "",
+        "| parser | 文書数 | unit数 | 文字数 | issue数 |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for parser_name in ("docling_docx", "docling_pptx", "pypdf"):
+        parser_summary = summary.by_parser.get(parser_name)
+        if parser_summary is None:
+            lines.append(f"| {parser_name} | 0 | 0 | 0 | 0 |")
+            continue
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    parser_name,
+                    str(parser_summary.documents),
+                    str(parser_summary.units),
+                    str(parser_summary.characters),
+                    str(parser_summary.issues),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "## XLSX抽出結果",
+            "",
+            "| 指標 | 件数 |",
+            "|---|---:|",
+            f"| XLSX文書 | {_xlsx_documents(result)} |",
+            f"| シート | {summary.xlsx_sheets} |",
+            f"| 行ブロック | {summary.xlsx_row_blocks} |",
+            f"| 非空セル | {summary.xlsx_non_empty_cells} |",
+            f"| 数式セル | {summary.xlsx_formula_cells} |",
+            f"| 結合範囲 | {summary.xlsx_merged_ranges} |",
+            f"| Excelテーブル | {summary.xlsx_excel_tables} |",
+            f"| 非表示シート | {summary.xlsx_hidden_sheets} |",
+            f"| 空シート | {summary.xlsx_empty_sheets} |",
+            f"| 大規模シート | {summary.xlsx_large_sheets} |",
+            "",
+            "## XLSX issue",
+            "",
+            "| issue | 件数 |",
+            "|---|---:|",
+            (
+                "| xlsx_formula_cached_value_missing | "
+                f"{summary.issues_by_type.get('xlsx_formula_cached_value_missing', 0)} |"
+            ),
+            f"| xlsx_large_sheet | {summary.issues_by_type.get('xlsx_large_sheet', 0)} |",
+            f"| xlsx_very_wide_sheet | {summary.issues_by_type.get('xlsx_very_wide_sheet', 0)} |",
+            "",
+            "## 画像・OCR抽出結果",
+            "",
+            "| 指標 | 件数 |",
+            "|---|---:|",
+            f"| PNG文書 | {summary.png_documents} |",
+            f"| PNG OCR成功 | {summary.png_ocr_success} |",
+            f"| PNG OCRテキストなし | {summary.png_ocr_no_text} |",
+            f"| PNG OCR失敗 | {summary.png_ocr_failed} |",
+            f"| PDF OCR対象ページ | {summary.pdf_pages_ocr_targeted} |",
+            f"| PDF OCR成功ページ | {summary.pdf_pages_ocr_success} |",
+            f"| PDF OCRテキストなし | {summary.pdf_pages_ocr_no_text} |",
+            f"| PDF OCR失敗ページ | {summary.pdf_pages_ocr_failed} |",
+            f"| OCR認識領域 | {summary.ocr_regions_detected} |",
+            f"| OCR採用領域 | {summary.ocr_regions_included} |",
+            f"| OCR除外領域 | {summary.ocr_regions_low_confidence} |",
+            f"| OCR文字数 | {summary.ocr_characters} |",
+            "",
+            "## OCR品質",
+            "",
+            f"- 平均信頼度: {summary.mean_ocr_confidence:.4f}",
+            f"- OCR文書: {summary.documents_with_ocr}",
+            f"- OCR失敗文書: {summary.png_ocr_failed + summary.pdf_pages_ocr_failed}",
+            "",
+            "## PDF OCR候補",
+            "",
+            f"- PDFページ数: {summary.pdf_pages}",
+            f"- テキストありページ: {summary.pdf_pages_with_text}",
+            f"- OCR候補ページ: {summary.pdf_pages_needing_ocr}",
+            f"- OCR候補文書: {_pdf_documents_with_ocr_issue(result)}",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _pdf_documents_with_ocr_issue(result: AuditResult) -> int:
+    return len(
+        {
+            issue.relative_path
+            for issue in result.issues
+            if issue.issue_type
+            in {"pdf_page_needs_ocr", "pdf_partially_needs_ocr", "image_dominant_document"}
+        }
+    )
+
+
+def _xlsx_documents(result: AuditResult) -> int:
+    summary = result.summary.by_parser.get("openpyxl_xlsx")
+    return 0 if summary is None else summary.documents
 
 
 def _distribution_to_record(statistics: DistributionStatistics) -> dict[str, Any]:
@@ -136,6 +289,7 @@ def _issue_to_record(issue: AuditIssue) -> dict[str, Any]:
         "message": issue.message,
         "unit_index": issue.unit_index,
         "locator": issue.locator,
+        "metadata": issue.metadata or {},
     }
 
 

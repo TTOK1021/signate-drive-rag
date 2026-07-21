@@ -5,6 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+import signate_drive_rag.cli as cli_module
 from signate_drive_rag.cli import app
 
 runner = CliRunner()
@@ -97,3 +98,60 @@ def test_scan_command_requires_root_option_or_source_root(tmp_path: Path, monkey
 
     assert result.exit_code == 2
     assert "--root または SOURCE_ROOT を指定してください。" in result.stderr
+
+
+def test_prepare_ocr_models_command_writes_manifest_without_real_download(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """prepare-ocr-modelsがCLI引数をモデル準備処理へ渡すことを確認する。"""
+    calls: list[dict[str, object]] = []
+
+    def fake_prepare_easyocr_models(
+        *,
+        model_dir: Path,
+        languages: tuple[str, ...],
+        gpu: bool,
+        overwrite: bool,
+    ) -> dict[str, object]:
+        calls.append(
+            {
+                "model_dir": model_dir,
+                "languages": languages,
+                "gpu": gpu,
+                "overwrite": overwrite,
+            }
+        )
+        return {"model_files": [{"filename": "dummy.pth"}]}
+
+    monkeypatch.setattr(
+        cli_module,
+        "prepare_easyocr_models",
+        fake_prepare_easyocr_models,
+    )
+    model_dir = tmp_path / "models"
+
+    result = runner.invoke(
+        app,
+        [
+            "prepare-ocr-models",
+            "--model-dir",
+            str(model_dir),
+            "--languages",
+            "ja,en",
+            "--device",
+            "cpu",
+            "--overwrite",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        {
+            "model_dir": model_dir,
+            "languages": ("ja", "en"),
+            "gpu": False,
+            "overwrite": True,
+        }
+    ]
+    assert "モデルファイル数: 1" in result.stdout

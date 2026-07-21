@@ -25,6 +25,7 @@ class AuditDocument:
     size_bytes: int
     parser_name: str
     units: tuple[AuditUnit, ...]
+    extraction_issues: tuple["AuditIssue", ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,7 @@ class AuditIssue:
     message: str
     unit_index: int | None = None
     locator: str | None = None
+    metadata: dict[str, JsonValue] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +67,7 @@ class ParserAuditSummary:
     empty_units: int
     units_without_required_locator: int
     duplicate_units: int
+    issues: int
     document_character_statistics: DistributionStatistics
     unit_character_statistics: DistributionStatistics
 
@@ -83,9 +86,38 @@ class AuditSummary:
     units_without_required_locator: int
     duplicate_units: int
     large_units: int
+    pdf_pages: int
+    pdf_pages_with_text: int
+    pdf_pages_needing_ocr: int
+    png_documents: int
+    png_ocr_success: int
+    png_ocr_no_text: int
+    png_ocr_failed: int
+    pdf_pages_ocr_targeted: int
+    pdf_pages_ocr_success: int
+    pdf_pages_ocr_no_text: int
+    pdf_pages_ocr_failed: int
+    ocr_regions_detected: int
+    ocr_regions_included: int
+    ocr_regions_low_confidence: int
+    ocr_characters: int
+    mean_ocr_confidence: float
+    documents_with_ocr: int
+    xlsx_sheets: int
+    xlsx_row_blocks: int
+    xlsx_non_empty_cells: int
+    xlsx_formula_cells: int
+    xlsx_formula_without_cached_values: int
+    xlsx_merged_ranges: int
+    xlsx_excel_tables: int
+    xlsx_hidden_sheets: int
+    xlsx_empty_sheets: int
+    xlsx_large_sheets: int
+    xlsx_very_wide_sheets: int
     total_issues: int
     issues_by_severity: dict[str, int]
     issues_by_type: dict[str, int]
+    units_by_type: dict[str, int]
     by_parser: dict[str, ParserAuditSummary]
     document_character_statistics: DistributionStatistics
     unit_character_statistics: DistributionStatistics

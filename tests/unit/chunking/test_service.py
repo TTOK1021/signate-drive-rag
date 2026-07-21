@@ -190,6 +190,111 @@ def test_chunking_service_groups_table_rows_and_reduces_repeated_headers() -> No
     assert result.chunks[0].metadata["row_count"] == 2
 
 
+def test_chunking_service_chunks_office_text_table_and_pdf_page_units() -> None:
+    """Office本文・表、PDFページを既存チャンク形式へ接続できる。"""
+    result = ChunkingService(max_chars=20, overlap_chars=0, table_max_rows=10).chunk(
+        [
+            document(
+                "office.docx",
+                parser_name="docling_docx",
+                units=(
+                    unit(
+                        "見出し配下の本文",
+                        unit_type="docx_paragraph",
+                        locator="item:2",
+                        metadata={"heading_path": ["見出し"]},
+                    ),
+                    unit(
+                        "| A | B |\n| --- | --- |\n| あ | 1 |",
+                        unit_type="docx_table",
+                        locator="table:1",
+                        metadata={"headers": ["A", "B"]},
+                    ),
+                    unit(
+                        "行2: あ | 1",
+                        unit_type="docx_table_row",
+                        locator="table:1/row:2",
+                        metadata={"values": ["あ", "1"], "logical_row_number": 2},
+                    ),
+                ),
+            ),
+            document(
+                "slides.pptx",
+                parser_name="docling_pptx",
+                units=(
+                    unit(
+                        "スライド1本文",
+                        unit_type="pptx_slide_text",
+                        locator="slide:1/item:1",
+                        metadata={"slide_number": 1},
+                    ),
+                    unit(
+                        "スライド2本文",
+                        unit_type="pptx_slide_text",
+                        locator="slide:2/item:2",
+                        metadata={"slide_number": 2},
+                    ),
+                    unit(
+                        "| A |\n| --- |\n| B |",
+                        unit_type="pptx_slide_table",
+                        locator="slide:2/table:1",
+                        metadata={"headers": ["A"], "slide_number": 2},
+                    ),
+                    unit(
+                        "行2: B",
+                        unit_type="pptx_slide_table_row",
+                        locator="slide:2/table:1/row:2",
+                        metadata={"values": ["B"], "logical_row_number": 2},
+                    ),
+                ),
+            ),
+            document(
+                "paper.pdf",
+                parser_name="pypdf",
+                units=(
+                    unit("ページ1本文", unit_type="pdf_page_text", locator="page:1"),
+                    unit("ページ2本文" * 5, unit_type="pdf_page_text", locator="page:2"),
+                ),
+            ),
+            document(
+                "book.xlsx",
+                parser_name="openpyxl_xlsx",
+                units=(
+                    unit(
+                        "Excelワークブック",
+                        unit_type="xlsx_workbook_summary",
+                        locator="workbook",
+                    ),
+                    unit(
+                        "シート名: 集計",
+                        unit_type="xlsx_sheet_summary",
+                        locator="sheet:集計",
+                    ),
+                    unit(
+                        "シート: 集計\n範囲: A1:B2\n列: A | B\n行1: A | B\n行2: 1 | 2",
+                        unit_type="xlsx_table_rows",
+                        locator="sheet:集計/range:A1:B2",
+                        metadata={"sheet_name": "集計", "range": "A1:B2"},
+                    ),
+                ),
+            ),
+        ]
+    )
+
+    by_path = {(chunk.relative_path, chunk.locator): chunk for chunk in result.chunks}
+    assert by_path[("office.docx", "item:2")].metadata["heading_path"] == ["見出し"]
+    assert by_path[("office.docx", "table:1/row:2-2")].unit_type == "table_rows"
+    assert by_path[("slides.pptx", "slide:2/table:1/row:2-2")].unit_type == "table_rows"
+    assert by_path[("paper.pdf", "page:1")].metadata["source_locator"] == "page:1"
+    assert by_path[("book.xlsx", "sheet:集計/range:A1:B2")].metadata["sheet_name"] == "集計"
+    assert by_path[("book.xlsx", "sheet:集計/range:A1:B2")].metadata["range"] == "A1:B2"
+    assert all(
+        chunk.locator in {"slide:1/item:1", "slide:2/item:2"}
+        for chunk in result.chunks
+        if chunk.relative_path == "slides.pptx" and chunk.unit_type == "pptx_slide_text"
+    )
+
+
 def test_chunking_service_handles_header_only_and_large_table_row() -> None:
     """ヘッダーだけの表と巨大な1行を処理できる。"""
     header_only = document(

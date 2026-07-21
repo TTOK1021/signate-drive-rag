@@ -26,8 +26,10 @@ class ExtractionSummary:
     unsupported_files: int
     total_units: int
     total_characters: int
+    total_issues: int
     by_parser: dict[str, int]
     by_suffix: dict[str, int]
+    issues_by_type: dict[str, int]
 
 
 @dataclass(frozen=True, slots=True)

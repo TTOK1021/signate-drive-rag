@@ -14,6 +14,7 @@ from signate_drive_rag.ingestion.parser_registry import (
     ParserRegistry,
     create_default_parser_registry,
 )
+from signate_drive_rag.ocr import OcrOptions
 
 
 def make_source_file(path: Path) -> SourceFile:
@@ -127,6 +128,12 @@ def test_parser_registry_selection_does_not_depend_on_registration_order(
         ("sample.ipynb", "notebook"),
         ("sample.csv", "delimited_text"),
         ("sample.tsv", "delimited_text"),
+        ("sample.docx", "docling_docx"),
+        ("sample.pptx", "docling_pptx"),
+        ("sample.pdf", "pypdf"),
+        ("SAMPLE.PDF", "pypdf"),
+        ("sample.xlsx", "openpyxl_xlsx"),
+        ("SAMPLE.XLSX", "openpyxl_xlsx"),
     ],
 )
 def test_default_parser_registry_selects_structured_document_parsers(
@@ -141,6 +148,34 @@ def test_default_parser_registry_selects_structured_document_parsers(
     registry = create_default_parser_registry()
 
     assert registry.find_parser(make_source_file(file_path)).name == parser_name
+
+
+def test_default_parser_registry_keeps_unsupported_file_behavior(tmp_path: Path) -> None:
+    """標準レジストリで未対応形式は従来どおり未対応例外になる。"""
+    file_path = tmp_path / "sample.bin"
+    file_path.write_bytes(b"content")
+
+    registry = create_default_parser_registry()
+
+    with pytest.raises(ParserNotFoundError):
+        registry.find_parser(make_source_file(file_path))
+
+
+def test_default_parser_registry_selects_png_parser_only_when_ocr_is_enabled(
+    tmp_path: Path,
+) -> None:
+    """OCR有効時だけPNGパーサーを登録することを確認する。"""
+    file_path = tmp_path / "sample.png"
+    file_path.write_bytes(b"png")
+
+    default_registry = create_default_parser_registry()
+    with pytest.raises(ParserNotFoundError):
+        default_registry.find_parser(make_source_file(file_path))
+
+    ocr_registry = create_default_parser_registry(
+        ocr_options=OcrOptions(model_dir=tmp_path / "models")
+    )
+    assert ocr_registry.find_parser(make_source_file(file_path)).name == "easyocr_png"
 
 
 @pytest.mark.parametrize("file_name", ["sample.csv", "sample.tsv"])

@@ -64,8 +64,10 @@ def make_result(tmp_path: Path, *, include_failure: bool = True) -> BatchExtract
         unsupported_files=1,
         total_units=1,
         total_characters=len("本文\n日本語"),
+        total_issues=0,
         by_parser={"plain_text": 1},
         by_suffix={".pdf": 1, ".txt": 1},
+        issues_by_type={},
     )
     return BatchExtractionResult(
         documents=(document,),

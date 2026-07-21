@@ -16,7 +16,7 @@ def test_extract_command_writes_output_files_and_prints_counts(tmp_path: Path) -
     root.mkdir()
     (root / "ok.txt").write_text("hello", encoding="utf-8")
     (root / "broken.json").write_text("{invalid", encoding="utf-8")
-    (root / "report.pdf").write_text("pdf", encoding="utf-8")
+    (root / "report.png").write_text("png", encoding="utf-8")
     output_dir = tmp_path / "out"
 
     result = runner.invoke(

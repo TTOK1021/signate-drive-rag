@@ -9,13 +9,23 @@ authors = [
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "bm25s>=0.3.9",
+    "defusedxml==0.7.1",
+    "docling==2.113.0",
+    "easyocr==1.7.2",
+    "numpy==2.4.6",
+    "openpyxl==3.1.5",
+    "pillow==12.3.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
+    "pypdf==6.14.2",
+    "pypdfium2==5.12.1",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "structlog>=26.1.0",
-    "typer>=0.26.8",
+    "torch==2.11.0+cu126",
+    "torchvision==0.26.0+cu126",
+    "typer>=0.12.5,<0.25.0",
 ]
 
 [project.scripts]
@@ -34,6 +44,15 @@ dev = [
     "ruff>=0.15.20",
 ]
 
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
 
 [tool.ruff]
 target-version = "py311"
@@ -44,6 +63,7 @@ exclude = [
     "artifacts",
     "logs",
     "share",
+    "tmp",
     "evaluation/data",
     "evaluation/submit",
 ]
@@ -75,6 +95,11 @@ addopts = [
     "-ra",
     "--strict-config",
     "--strict-markers",
+    "-m",
+    "not ocr_real",
+]
+markers = [
+    "ocr_real: ローカルOCRモデルを使用する低頻度の実モデルスモークテスト。",
 ]
 
 [tool.coverage.run]

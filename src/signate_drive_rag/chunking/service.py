@@ -35,9 +35,28 @@ KNOWN_UNIT_TYPES = {
     "json_value",
     "notebook_cell",
     "notebook_output",
+    "image_ocr_text",
     "table_header",
     "table_row",
+    "docx_heading",
+    "docx_paragraph",
+    "docx_list_item",
+    "docx_table",
+    "docx_table_row",
+    "pptx_slide_title",
+    "pptx_slide_text",
+    "pptx_speaker_notes",
+    "pptx_slide_table",
+    "pptx_slide_table_row",
+    "pdf_page_text",
+    "pdf_page_ocr",
+    "xlsx_workbook_summary",
+    "xlsx_sheet_summary",
+    "xlsx_table_rows",
 }
+TABLE_HEADER_UNIT_TYPES = frozenset({"table_header", "docx_table", "pptx_slide_table"})
+TABLE_ROW_UNIT_TYPES = frozenset({"table_row", "docx_table_row", "pptx_slide_table_row"})
+TABLE_UNIT_TYPES = TABLE_HEADER_UNIT_TYPES | TABLE_ROW_UNIT_TYPES
 
 
 class ChunkingService:
@@ -92,17 +111,39 @@ class ChunkingService:
 
         raw_chunks: list[_RawChunk] = []
         issues: list[ChunkIssue] = []
-        if document.parser_name == "delimited_text" or any(
-            unit.unit_type in {"table_header", "table_row"} for unit in document.units
-        ):
+        if document.parser_name == "delimited_text":
             table_chunks, table_issues = self._chunk_table_document(document)
             raw_chunks.extend(table_chunks)
             issues.extend(table_issues)
         else:
-            for unit_index, unit in enumerate(document.units):
+            unit_index = 0
+            while unit_index < len(document.units):
+                unit = document.units[unit_index]
+                if unit.unit_type in TABLE_HEADER_UNIT_TYPES:
+                    table_chunks, table_issues, next_unit_index = self._chunk_table_block(
+                        document,
+                        unit_index,
+                    )
+                    raw_chunks.extend(table_chunks)
+                    issues.extend(table_issues)
+                    unit_index = next_unit_index
+                    continue
+                if unit.unit_type in TABLE_ROW_UNIT_TYPES:
+                    issues.append(
+                        ChunkIssue(
+                            relative_path=document.relative_path,
+                            parser_name=document.parser_name,
+                            issue_type="table_metadata_missing",
+                            severity="warning",
+                            message="表の親unitがないため、行unitを単独でチャンク化します。",
+                            source_unit_index=unit_index,
+                            locator=unit.locator,
+                        )
+                    )
                 unit_chunks, unit_issues = self._chunk_unit(document, unit, unit_index)
                 raw_chunks.extend(unit_chunks)
                 issues.extend(unit_issues)
+                unit_index += 1
 
         chunks: list[RetrievalChunk] = []
         for chunk_index, raw_chunk in enumerate(raw_chunks):
@@ -148,6 +189,16 @@ class ChunkingService:
             ]
 
         issues: list[ChunkIssue] = []
+        if unit.unit_type == "xlsx_table_rows":
+            return [
+                _RawChunk(
+                    unit_type=unit.unit_type,
+                    text=unit.text,
+                    locator=unit.locator,
+                    source_unit_indices=(unit_index,),
+                    metadata=_unit_metadata_without_split(unit),
+                )
+            ], issues
         if unit.unit_type not in KNOWN_UNIT_TYPES:
             issues.append(
                 ChunkIssue(
@@ -199,7 +250,7 @@ class ChunkingService:
         rows: list[tuple[int, ChunkSourceUnit]] = [
             (unit_index, unit)
             for unit_index, unit in enumerate(document.units)
-            if unit.unit_type == "table_row"
+            if unit.unit_type in TABLE_ROW_UNIT_TYPES
         ]
         if not rows:
             text = f"列: {' | '.join(headers)}"
@@ -248,6 +299,83 @@ class ChunkingService:
             chunks.extend(self._table_group_chunks(header_index, header, headers, delimiter, group))
         return chunks, issues
 
+    def _chunk_table_block(
+        self,
+        document: ChunkSourceDocument,
+        header_index: int,
+    ) -> tuple[list["_RawChunk"], list[ChunkIssue], int]:
+        """Office文書では本文unitを失わないため、連続する表ブロックだけを表扱いする。"""
+        header = document.units[header_index]
+        next_unit_index = header_index + 1
+        rows: list[tuple[int, ChunkSourceUnit]] = []
+        while next_unit_index < len(document.units):
+            candidate = document.units[next_unit_index]
+            if candidate.unit_type not in TABLE_ROW_UNIT_TYPES:
+                break
+            rows.append((next_unit_index, candidate))
+            next_unit_index += 1
+
+        headers = _metadata_string_list(header.metadata.get("headers"))
+        delimiter = _metadata_string(header.metadata.get("delimiter")) or ""
+        if headers is None:
+            fallback_chunks, fallback_issues = self._fallback_table_units(
+                document,
+                "表unitのheadersが不正です。",
+                start_index=header_index,
+                end_index=next_unit_index,
+            )
+            return fallback_chunks, fallback_issues, next_unit_index
+
+        if not rows:
+            return (
+                [
+                    _RawChunk(
+                        unit_type="table_rows",
+                        text=header.text,
+                        locator=header.locator,
+                        source_unit_indices=(header_index,),
+                        metadata={
+                            **dict(header.metadata),
+                            "headers": _json_list(headers),
+                            "start_row": 1,
+                            "end_row": 1,
+                            "row_count": 0,
+                            "delimiter": delimiter,
+                            "source_locator": header.locator,
+                            "original_unit_indices": [header_index],
+                        },
+                    )
+                ],
+                [],
+                next_unit_index,
+            )
+
+        chunks: list[_RawChunk] = []
+        group: list[tuple[int, ChunkSourceUnit]] = []
+        for row_index, row in rows:
+            if _table_row_line(row) is None:
+                fallback_chunks, fallback_issues = self._fallback_table_units(
+                    document,
+                    f"表行unitのmetadataが不正です。unit_index={row_index}",
+                    start_index=header_index,
+                    end_index=next_unit_index,
+                )
+                return fallback_chunks, fallback_issues, next_unit_index
+            candidate_group = [*group, (row_index, row)]
+            candidate_text = _table_group_text(headers, candidate_group)
+            if group and (
+                len(group) >= self._table_max_rows or len(candidate_text) > self._max_chars
+            ):
+                chunks.extend(
+                    self._table_group_chunks(header_index, header, headers, delimiter, group)
+                )
+                group = [(row_index, row)]
+                continue
+            group = candidate_group
+        if group:
+            chunks.extend(self._table_group_chunks(header_index, header, headers, delimiter, group))
+        return chunks, [], next_unit_index
+
     def _table_group_chunks(
         self,
         header_index: int,
@@ -260,7 +388,11 @@ class ChunkingService:
         text = _table_group_text(headers, group)
         start_row = _logical_row_number(group[0][1])
         end_row = _logical_row_number(group[-1][1])
-        locator = f"row:{start_row}-{end_row}"
+        locator = (
+            f"row:{start_row}-{end_row}"
+            if header.unit_type == "table_header" or header.locator is None
+            else f"{header.locator}/row:{start_row}-{end_row}"
+        )
         source_unit_indices = (header_index, *(unit_index for unit_index, _unit in group))
         metadata: dict[str, JsonValue] = {
             "headers": _json_list(headers),
@@ -303,12 +435,18 @@ class ChunkingService:
         self,
         document: ChunkSourceDocument,
         message: str,
+        *,
+        start_index: int | None = None,
+        end_index: int | None = None,
     ) -> tuple[list["_RawChunk"], list[ChunkIssue]]:
         """表metadataが不正な場合に値を失わず汎用分割へ退避する。"""
         chunks: list[_RawChunk] = []
         issues: list[ChunkIssue] = []
-        for unit_index, unit in enumerate(document.units):
-            if unit.unit_type not in {"table_header", "table_row"}:
+        indexed_units = tuple(enumerate(document.units))
+        if start_index is not None or end_index is not None:
+            indexed_units = indexed_units[start_index:end_index]
+        for unit_index, unit in indexed_units:
+            if unit.unit_type not in TABLE_UNIT_TYPES:
                 continue
             unit_chunks, unit_issues = self._chunk_unit(document, unit, unit_index)
             chunks.extend(unit_chunks)
@@ -423,6 +561,22 @@ def _unit_metadata(
     return metadata
 
 
+def _unit_metadata_without_split(unit: ChunkSourceUnit) -> dict[str, JsonValue]:
+    """XLSX表ブロックは既に分割済みなので、自由文overlap用metadataを付けない。"""
+    metadata = dict(unit.metadata)
+    metadata.update(
+        {
+            "source_locator": unit.locator,
+            "split_index": 0,
+            "split_count": 1,
+            "original_unit_characters": len(unit.text),
+            "start_character": 0,
+            "end_character": len(unit.text),
+        }
+    )
+    return metadata
+
+
 def _split_locator(unit: ChunkSourceUnit, segment: TextSegment) -> str | None:
     """locatorがないテキストunitには概算の行範囲を付与する。"""
     if unit.locator is not None:
@@ -437,7 +591,7 @@ def _split_locator(unit: ChunkSourceUnit, segment: TextSegment) -> str | None:
 def _find_table_header_index(units: Sequence[ChunkSourceUnit]) -> int | None:
     """表ヘッダーunitの位置を取得する。"""
     for unit_index, unit in enumerate(units):
-        if unit.unit_type == "table_header":
+        if unit.unit_type in TABLE_HEADER_UNIT_TYPES:
             return unit_index
     return None
 

@@ -24,10 +24,32 @@ from signate_drive_rag.chunking import (
     load_chunk_source_documents,
     save_chunking_result,
 )
+from signate_drive_rag.docling_poc import (
+    DoclingConfigurationError,
+    DoclingConversionAdapter,
+    DoclingPocInputError,
+    DoclingPocOutputError,
+    DoclingPocService,
+    parse_formats,
+    parse_profiles,
+    save_docling_poc_run,
+)
+from signate_drive_rag.document_diagnostics.serializer import (
+    DocumentDiagnosticOutputError,
+    save_document_diagnostic_report,
+)
+from signate_drive_rag.document_diagnostics.service import (
+    DocumentDiagnosticInputError,
+    DocumentDiagnosticService,
+    parse_diagnostic_formats,
+)
 from signate_drive_rag.domain import SourceFile
 from signate_drive_rag.extraction import ExtractionService, save_extraction_result
-from signate_drive_rag.ingestion import discover_files
+from signate_drive_rag.ingestion import discover_files, discover_files_with_ignored
 from signate_drive_rag.ingestion.parser_registry import create_default_parser_registry
+from signate_drive_rag.ocr.device import resolve_ocr_gpu_flag
+from signate_drive_rag.ocr.models import OcrOptions
+from signate_drive_rag.ocr.prepare import OcrModelPrepareError, prepare_easyocr_models
 from signate_drive_rag.retrieval import (
     SEARCH_CHANNELS,
     Bm25Retriever,
@@ -135,7 +157,8 @@ def scan(
         typer.echo(str(error), err=True)
         raise typer.Exit(code=2) from error
 
-    source_files = discover_files(source_root)
+    discovery_result = discover_files_with_ignored(source_root)
+    source_files = list(discovery_result.source_files)
     resolved_root = source_root.resolve()
 
     typer.echo(f"探索ルート: {resolved_root}")
@@ -151,6 +174,12 @@ def scan(
         typer.echo("その他内訳:")
         for extension, count in other_extension_counts:
             typer.echo(f"{extension:<7} {count}")
+
+    if discovery_result.ignored_files:
+        typer.echo("")
+        typer.echo(f"除外ファイル数: {len(discovery_result.ignored_files)}")
+        for reason, count in discovery_result.ignored_by_reason.items():
+            typer.echo(f"{reason}: {count}")
 
     if manifest is not None:
         write_manifest_jsonl(source_files, manifest)
@@ -168,10 +197,43 @@ def extract(
         Path,
         typer.Option("--output-dir", help="抽出結果の保存先。"),
     ] = Path("artifacts") / "extracted",
+    enable_ocr: Annotated[
+        bool,
+        typer.Option("--enable-ocr", help="PNGとOCR候補PDFページへローカルOCRを適用する。"),
+    ] = False,
+    ocr_model_dir: Annotated[
+        Path,
+        typer.Option("--ocr-model-dir", help="EasyOCRモデルを保存したディレクトリ。"),
+    ] = Path("artifacts") / "models" / "easyocr",
+    ocr_device: Annotated[
+        str,
+        typer.Option("--ocr-device", help="OCR実行デバイス。cpu/gpu/autoを受け付ける。"),
+    ] = "auto",
+    ocr_languages: Annotated[
+        str,
+        typer.Option("--ocr-languages", help="OCR言語をカンマ区切りで指定する。"),
+    ] = "ja,en",
 ) -> None:
     """指定したルート配下の原本ファイルを一括抽出する。"""
-    source_files = discover_files(root)
-    parser_registry = create_default_parser_registry()
+    try:
+        ocr_options = (
+            OcrOptions(
+                languages=parse_ocr_languages(ocr_languages),
+                gpu=parse_ocr_device(ocr_device),
+                model_dir=ocr_model_dir,
+            )
+            if enable_ocr
+            else None
+        )
+        source_files = discover_files(root)
+        parser_registry = (
+            create_default_parser_registry(ocr_options=ocr_options)
+            if ocr_options is not None
+            else create_default_parser_registry()
+        )
+    except ValueError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
     extraction_result = ExtractionService(parser_registry).extract(source_files)
     save_extraction_result(extraction_result, output_dir)
 
@@ -190,6 +252,60 @@ def extract(
     typer.echo("  failures.jsonl")
     typer.echo("  unsupported.jsonl")
     typer.echo("  summary.json")
+
+
+def parse_ocr_languages(languages: str) -> tuple[str, ...]:
+    """CLIのカンマ区切り言語指定を決定的なtupleへ変換する。"""
+    parsed = tuple(language.strip() for language in languages.split(",") if language.strip())
+    if not parsed:
+        raise ValueError("ocr-languagesには1つ以上の言語を指定してください。")
+    return parsed
+
+
+def parse_ocr_device(device: str) -> bool:
+    """EasyOCRのgpuフラグへ変換し、autoではCUDA対応Torchを優先する。"""
+    return resolve_ocr_gpu_flag(device)
+
+
+@app.command("prepare-ocr-models")
+def prepare_ocr_models(
+    model_dir: Annotated[
+        Path,
+        typer.Option("--model-dir", help="EasyOCRモデルの保存先ディレクトリ。"),
+    ] = Path("artifacts") / "models" / "easyocr",
+    languages: Annotated[
+        str,
+        typer.Option("--languages", help="準備するOCR言語をカンマ区切りで指定する。"),
+    ] = "ja,en",
+    device: Annotated[
+        str,
+        typer.Option("--device", help="モデル準備時のデバイス。cpu/gpu/autoを指定する。"),
+    ] = "auto",
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="既存manifestを上書きする。"),
+    ] = False,
+) -> None:
+    """EasyOCRモデルを明示的に準備し、manifestを保存する。"""
+    try:
+        parsed_languages = parse_ocr_languages(languages)
+        gpu = parse_ocr_device(device)
+        manifest = prepare_easyocr_models(
+            model_dir=model_dir,
+            languages=parsed_languages,
+            gpu=gpu,
+            overwrite=overwrite,
+        )
+    except (OcrModelPrepareError, ValueError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+
+    typer.echo("OCRモデル準備を完了しました")
+    typer.echo(f"モデルディレクトリ: {model_dir}")
+    typer.echo(f"言語: {', '.join(parsed_languages)}")
+    typer.echo(f"モデルファイル数: {len(manifest['model_files'])}")
+    typer.echo("出力:")
+    typer.echo("  manifest.json")
 
 
 @app.command()
@@ -249,6 +365,7 @@ def audit(
     typer.echo("  summary.json")
     typer.echo("  issues.jsonl")
     typer.echo("  samples.jsonl")
+    typer.echo("  report.md")
 
 
 @app.command()
@@ -580,3 +697,175 @@ def _index_source_sha256(manifest: Mapping[str, object]) -> str:
     if not isinstance(value, str):
         raise ValueError("manifest.source_sha256が文字列ではありません。")
     return value
+
+
+@app.command()
+def diagnose_documents(
+    source: Annotated[
+        Path,
+        typer.Option("--source", help="診断対象の共有ドライブルートディレクトリ。"),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="文書診断成果物の保存先。"),
+    ] = Path("artifacts") / "document_diagnostics",
+    formats: Annotated[
+        str,
+        typer.Option("--formats", help="診断対象形式のカンマ区切り指定。"),
+    ] = "pdf",
+    sample_pages: Annotated[
+        int,
+        typer.Option("--sample-pages", help="pypdfでテキスト抽出を試す最大ページ数。"),
+    ] = 3,
+    try_docling: Annotated[
+        bool,
+        typer.Option("--try-docling", help="PDF診断時にDocling default_localを試行する。"),
+    ] = False,
+    diagnose_ocr: Annotated[
+        bool,
+        typer.Option("--diagnose-ocr/--no-diagnose-ocr", help="Tesseract OCR環境を診断する。"),
+    ] = True,
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="既存の診断出力を置き換える。"),
+    ] = False,
+) -> None:
+    """文書入力とローカル変換環境を診断する。"""
+    try:
+        parsed_formats = parse_diagnostic_formats(formats)
+        diagnostic_report = DocumentDiagnosticService(
+            docling_adapter_factory=create_docling_conversion_adapter,
+        ).diagnose(
+            source,
+            formats=parsed_formats,
+            sample_pages=sample_pages,
+            try_docling=try_docling,
+            diagnose_ocr=diagnose_ocr,
+        )
+        save_document_diagnostic_report(diagnostic_report, output_dir, overwrite=overwrite)
+    except (
+        DoclingConfigurationError,
+        DocumentDiagnosticInputError,
+        DocumentDiagnosticOutputError,
+        FileNotFoundError,
+        NotADirectoryError,
+        ValueError,
+    ) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+
+    summary = diagnostic_report.summary
+    typer.echo("文書入力・環境診断を完了しました")
+    typer.echo("")
+    typer.echo(f"探索ルート: {source.resolve()}")
+    typer.echo(f"PDF候補数: {summary.candidate_files}")
+    typer.echo(f"PDF診断数: {summary.diagnosed_files}")
+    typer.echo(f"Office一時ファイル除外数: {summary.ignored_files}")
+    typer.echo(f"pypdf読取可能: {summary.pypdf_readable}")
+    typer.echo(f"pypdf読取不可: {summary.pypdf_unreadable}")
+    typer.echo(f"Docling試行: {summary.docling_attempted}")
+    typer.echo(f"Docling成功: {summary.docling_success}")
+    typer.echo(f"Docling失敗: {summary.docling_failed}")
+    typer.echo(f"OCR診断: {summary.ocr_diagnosis or '未実行'}")
+    typer.echo("")
+    typer.echo("出力:")
+    typer.echo("  manifest.json")
+    typer.echo("  pdf_results.jsonl")
+    typer.echo("  ocr_environment.json")
+    typer.echo("  ignored.jsonl")
+    typer.echo("  summary.json")
+    typer.echo("  report.md")
+
+
+@app.command()
+def docling_poc(
+    source: Annotated[
+        Path,
+        typer.Option("--source", help="共有ドライブのルートディレクトリ。"),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="Docling PoC成果物の保存先。"),
+    ] = Path("artifacts") / "docling_poc",
+    formats: Annotated[
+        str,
+        typer.Option("--formats", help="対象形式のカンマ区切り指定。"),
+    ] = "docx,pptx,pdf,xlsx,png",
+    samples_per_format: Annotated[
+        int,
+        typer.Option("--samples-per-format", help="形式ごとの代表サンプル数。"),
+    ] = 5,
+    profiles: Annotated[
+        str,
+        typer.Option("--profiles", help="変換profileのカンマ区切り指定。"),
+    ] = "default_local,japanese_ocr",
+    timeout_seconds: Annotated[
+        int,
+        typer.Option("--timeout-seconds", help="Doclingの文書タイムアウト秒数。"),
+    ] = 180,
+    preview_chars: Annotated[
+        int,
+        typer.Option("--preview-chars", help="レビュー用プレビュー文字数。"),
+    ] = 300,
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="既存PoC出力を置き換える。"),
+    ] = False,
+) -> None:
+    """未対応形式に対するDocling適用可否を形式別に評価する。"""
+    try:
+        parsed_formats = parse_formats(formats)
+        parsed_profiles = parse_profiles(profiles)
+        adapter = create_docling_conversion_adapter()
+        poc_run = DoclingPocService(adapter).run_from_root(
+            source,
+            formats=parsed_formats,
+            samples_per_format=samples_per_format,
+            profiles=parsed_profiles,
+            timeout_seconds=timeout_seconds,
+            preview_chars=preview_chars,
+        )
+        save_docling_poc_run(poc_run, output_dir, overwrite=overwrite)
+    except (
+        DoclingConfigurationError,
+        DoclingPocInputError,
+        DoclingPocOutputError,
+        FileNotFoundError,
+        NotADirectoryError,
+        ValueError,
+    ) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+
+    summary = poc_run.summary
+    typer.echo("Docling形式別PoCを完了しました")
+    typer.echo("")
+    typer.echo("候補ファイル:")
+    for suffix, count in summary.candidate_counts_by_suffix.items():
+        typer.echo(f"  {suffix.upper().lstrip('.')}: {count}")
+    typer.echo("")
+    typer.echo("選択ファイル:")
+    for suffix, count in summary.selected_counts_by_suffix.items():
+        typer.echo(f"  {suffix.upper().lstrip('.')}: {count}")
+    typer.echo("")
+    typer.echo(f"変換実行数: {summary.executed_conversions}")
+    typer.echo(f"成功: {summary.status_counts.get('success', 0)}")
+    typer.echo(f"部分成功: {summary.status_counts.get('partial_success', 0)}")
+    typer.echo(f"失敗: {summary.status_counts.get('failed', 0)}")
+    typer.echo(f"タイムアウト: {summary.status_counts.get('timeout', 0)}")
+    typer.echo(f"スキップ: {summary.status_counts.get('skipped', 0)}")
+    typer.echo("")
+    typer.echo("出力:")
+    typer.echo("  manifest.json")
+    typer.echo("  selection.jsonl")
+    typer.echo("  results.jsonl")
+    typer.echo("  errors.jsonl")
+    typer.echo("  summary.json")
+    typer.echo("  review.csv")
+    typer.echo("  report.md")
+    typer.echo("  converted/")
+
+
+def create_docling_conversion_adapter() -> DoclingConversionAdapter:
+    """CLIから使うDoclingアダプターを作成する。"""
+    return DoclingConversionAdapter()
