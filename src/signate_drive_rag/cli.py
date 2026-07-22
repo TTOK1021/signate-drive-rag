@@ -24,6 +24,11 @@ from signate_drive_rag.chunking import (
     load_chunk_source_documents,
     save_chunking_result,
 )
+from signate_drive_rag.corpus_rebuild import (
+    RebuildCorpusError,
+    RebuildCorpusOptions,
+    RebuildCorpusService,
+)
 from signate_drive_rag.docling_poc import (
     DoclingConfigurationError,
     DoclingConversionAdapter,
@@ -137,6 +142,128 @@ def _source_file_to_manifest_record(source_file: SourceFile) -> dict[str, object
         "size_bytes": source_file.size_bytes,
         "modified_at": source_file.modified_at.isoformat(),
     }
+
+
+@app.command()
+def rebuild_corpus(
+    source: Annotated[
+        Path,
+        typer.Option("--source", help="共有ドライブのルートディレクトリ。"),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="再構築成果物の出力先。"),
+    ],
+    enable_ocr: Annotated[
+        bool,
+        typer.Option("--enable-ocr", help="PNGとOCR候補PDFページへローカルOCRを適用する。"),
+    ] = False,
+    ocr_model_dir: Annotated[
+        Path,
+        typer.Option("--ocr-model-dir", help="EasyOCRモデルを保存したディレクトリ。"),
+    ] = Path("artifacts") / "models" / "easyocr",
+    ocr_device: Annotated[
+        str,
+        typer.Option("--ocr-device", help="OCR実行デバイス。cpu/gpu/autoを受け付ける。"),
+    ] = "auto",
+    ocr_languages: Annotated[
+        str,
+        typer.Option("--ocr-languages", help="OCR言語をカンマ区切りで指定する。"),
+    ] = "ja,en",
+    max_chars: Annotated[
+        int,
+        typer.Option("--max-chars", help="1チャンクの最大文字数。"),
+    ] = 4_000,
+    overlap_chars: Annotated[
+        int,
+        typer.Option("--overlap-chars", help="分割チャンク間の重複文字数。"),
+    ] = 200,
+    table_max_rows: Annotated[
+        int,
+        typer.Option("--table-max-rows", help="表チャンクに含める最大データ行数。"),
+    ] = 25,
+    queries: Annotated[
+        Path | None,
+        typer.Option("--queries", help="検索評価用JSONLへのパス。"),
+    ] = None,
+    baseline_dir: Annotated[
+        Path | None,
+        typer.Option("--baseline-dir", help="比較対象の旧検索評価ディレクトリ。"),
+    ] = None,
+    top_k: Annotated[
+        int,
+        typer.Option("--top-k", help="質問ごとに取得する検索結果数。"),
+    ] = 10,
+    candidate_multiplier: Annotated[
+        int,
+        typer.Option("--candidate-multiplier", help="各チャネルで取得する候補倍率。"),
+    ] = 5,
+    rrf_k: Annotated[
+        int,
+        typer.Option("--rrf-k", help="RRFの順位緩和パラメータ。"),
+    ] = 60,
+    report_results_per_query: Annotated[
+        int,
+        typer.Option("--report-results-per-query", help="report.mdに表示する質問ごとの結果数。"),
+    ] = 5,
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="既存出力を置き換える。"),
+    ] = False,
+    resume: Annotated[
+        bool,
+        typer.Option("--resume", help="正常完了済み工程を条件付きで再利用する。"),
+    ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option("--strict", help="品質ゲート違反時に失敗させる。"),
+    ] = False,
+) -> None:
+    """全対応形式のコーパスを同じ条件で再構築する。"""
+    try:
+        result = RebuildCorpusService().rebuild(
+            RebuildCorpusOptions(
+                source=source,
+                output_dir=output_dir,
+                enable_ocr=enable_ocr,
+                ocr_model_dir=ocr_model_dir,
+                ocr_device=ocr_device,
+                ocr_languages=parse_ocr_languages(ocr_languages),
+                max_chars=max_chars,
+                overlap_chars=overlap_chars,
+                table_max_rows=table_max_rows,
+                queries=queries,
+                baseline_dir=baseline_dir,
+                top_k=top_k,
+                candidate_multiplier=candidate_multiplier,
+                rrf_k=rrf_k,
+                report_results_per_query=report_results_per_query,
+                overwrite=overwrite,
+                resume=resume,
+                strict=strict,
+            )
+        )
+    except (
+        RebuildCorpusError,
+        FileNotFoundError,
+        NotADirectoryError,
+        ValueError,
+    ) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+
+    typer.echo("全文書コーパス再構築を完了しました")
+    typer.echo(f"出力先: {result.output_dir}")
+    typer.echo("")
+    typer.echo("ステージ:")
+    for stage in result.stages:
+        typer.echo(f"  {stage.name}: {stage.status}")
+    typer.echo("")
+    typer.echo("出力:")
+    typer.echo("  manifest.json")
+    typer.echo("  stage_status.json")
+    typer.echo("  source_snapshot.jsonl")
+    typer.echo("  report.md")
 
 
 @app.command()
